@@ -1,0 +1,120 @@
+Only in ./.certora_sources/certora/confs: sort.conf
+Only in ./.certora_sources/certora: harness
+Only in ./.certora_sources/certora/specs: #Atlas.spec#
+Only in ./.certora_sources/certora/specs: .#Atlas.spec
+Only in ./.certora_sources/certora/specs: Sort.spec
+Only in ./.certora_sources/: .certora_internal
+Only in ./.certora_sources/: decompiler_trace.log
+Only in ./.certora_sources/: emv-1-certora-02-Dec--11-20
+Only in ./.certora_sources/: emv-2-certora-02-Dec--16-26
+Only in ./.certora_sources/: emv-3-certora-02-Dec--16-31
+Only in ./.certora_sources/: emv-4-certora-02-Dec--16-35
+diff -u -r ../fresh/.certora_sources/lib/solady/src/utils/LibSort.sol ./.certora_sources/lib/solady/src/utils/LibSort.sol
+--- ../fresh/.certora_sources/lib/solady/src/utils/LibSort.sol	2024-11-21 11:26:32.000000000 -0800
++++ ./.certora_sources/lib/solady/src/utils/LibSort.sol	2024-12-02 10:33:50.924992486 -0800
+@@ -14,7 +14,7 @@
+     // - May be suitable for view functions intended for off-chain querying.
+ 
+     /// @dev Sorts the array in-place with insertion sort.
+-    function insertionSort(uint256[] memory a) internal pure {
++    function insertionSortOpt(uint256[] memory a) internal pure {
+         /// @solidity memory-safe-assembly
+         assembly {
+             let n := mload(a) // Length of `a`.
+@@ -40,6 +40,18 @@
+         }
+     }
+ 
++	function insertionSort(uint256[] memory a) internal pure {
++		for(uint i = 1; i < a.length; i++) {
++			uint v = a[i];
++			uint j = i - 1;
++			// loop invariant: forall k.k > j && k <= i => a[k] >= v
++			for(; j >= 0 && a[j] > v; j--) {
++				a[j + 1] = a[j];
++			}
++			a[j + 1] = v;
++		}
++	}
++
+     /// @dev Sorts the array in-place with insertion sort.
+     function insertionSort(int256[] memory a) internal pure {
+         _flipSign(a);
+diff -u -r ../fresh/.certora_sources/lib/solady/src/utils/SafeTransferLib.sol ./.certora_sources/lib/solady/src/utils/SafeTransferLib.sol
+--- ../fresh/.certora_sources/lib/solady/src/utils/SafeTransferLib.sol	2024-11-21 11:26:30.000000000 -0800
++++ ./.certora_sources/lib/solady/src/utils/SafeTransferLib.sol	2024-12-02 11:20:01.265378547 -0800
+@@ -196,19 +196,17 @@
+         /// @solidity memory-safe-assembly
+         assembly {
+             let m := mload(0x40) // Cache the free memory pointer.
+-            mstore(0x60, amount) // Store the `amount` argument.
+-            mstore(0x40, to) // Store the `to` argument.
+-            mstore(0x2c, shl(96, from)) // Store the `from` argument.
+-            mstore(0x0c, 0x23b872dd000000000000000000000000) // `transferFrom(address,address,uint256)`.
+-            let success := call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
++			mstore(add(m, 0x60), amount) // Store the `amount` argument.
++			mstore(add(m, 0x40), to) // Store the `to` argument.
++			mstore(add(m, 0x2c), shl(96, from)) // Store the `from` argument.
++			mstore(add(m, 0x0c), 0x23b872dd000000000000000000000000) // `transferFrom(address,address,uint256)`.
++			let success := call(gas(), token, 0, add(m, 0x1c), 0x64, 0x00, 0x20)
+             if iszero(and(eq(mload(0x00), 1), success)) {
+                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                     mstore(0x00, 0x7939f424) // `TransferFromFailed()`.
+                     revert(0x1c, 0x04)
+                 }
+             }
+-            mstore(0x60, 0) // Restore the zero slot to zero.
+-            mstore(0x40, m) // Restore the free memory pointer.
+         }
+     }
+ 
+@@ -279,18 +277,18 @@
+     function safeTransfer(address token, address to, uint256 amount) internal {
+         /// @solidity memory-safe-assembly
+         assembly {
+-            mstore(0x14, to) // Store the `to` argument.
+-            mstore(0x34, amount) // Store the `amount` argument.
+-            mstore(0x00, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.
++			let m := mload(0x40)
++			mstore(add(m, 0x14), to) // Store the `to` argument.
++			mstore(add(m, 0x34), amount) // Store the `amount` argument.
++            mstore(m, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.
+             // Perform the transfer, reverting upon failure.
+-            let success := call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
++			let success := call(gas(), token, 0, add(0x10, m), 0x44, 0x00, 0x20)
+             if iszero(and(eq(mload(0x00), 1), success)) {
+                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
+                     mstore(0x00, 0x90b8ec18) // `TransferFailed()`.
+                     revert(0x1c, 0x04)
+                 }
+             }
+-            mstore(0x34, 0) // Restore the part of the free memory pointer that was overwritten.
+         }
+     }
+ 
+diff -u -r ../fresh/.certora_sources/run.conf ./.certora_sources/run.conf
+--- ../fresh/.certora_sources/run.conf	2024-11-21 11:26:44.000000000 -0800
++++ ./.certora_sources/run.conf	2024-12-02 10:44:06.682272589 -0800
+@@ -37,7 +37,7 @@
+     ],
+     "process": "emv",
+     "prover_args": [
+-        " -verifyCache -verifyTACDumps -testMode -checkRuleDigest -callTraceHardFail on -maxCommandCount 1000000000 -maxBlockCount 1000000000"
++        "-maxCommandCount 1000000000 -maxBlockCount 1000000000 -globallyRelaxedPointerSemantics true"
+     ],
+     "rule": [
+         "metaCallSanity"
+diff -u -r ../fresh/.certora_sources/src/contracts/atlas/Escrow.sol ./.certora_sources/src/contracts/atlas/Escrow.sol
+--- ../fresh/.certora_sources/src/contracts/atlas/Escrow.sol	2024-11-21 11:26:32.000000000 -0800
++++ ./.certora_sources/src/contracts/atlas/Escrow.sol	2024-12-01 20:02:08.031767257 -0800
+@@ -444,7 +444,9 @@
+             // Get the uint256 from the memory array
+             assembly {
+                 let dataLocation := add(_data, 0x20)
+-                bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
++                let len := mload(_data)
++                if lt(len, 36) { revert(0, 0) }
++                bidAmount := mload(add(dataLocation, sub(len, 32)))
+             }
+             return bidAmount;
+         }

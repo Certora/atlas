@@ -1,0 +1,385 @@
+diff -ruN ../src/contracts/atlas/Atlas.sol contracts/atlas/Atlas.sol
+--- ../src/contracts/atlas/Atlas.sol	2024-11-26 17:59:53.000000000 +0530
++++ contracts/atlas/Atlas.sol	2024-12-02 23:21:50.000000000 +0530
+@@ -98,30 +98,34 @@
+         // userOpHash has already been calculated and verified in validateCalls at this point, so rather
+         // than re-calculate it, we can simply take it from the dAppOp here. It's worth noting that this will
+         // be either a TRUSTED or DEFAULT hash, depending on the allowsTrustedOpHash setting.
+-        try this.execute(_dConfig, userOp, solverOps, _executionEnvironment, _bundler, dAppOp.userOpHash, _isSimulation)
+-        returns (Context memory ctx) {
+-            // Gas Refund to sender only if execution is successful
+-            (uint256 _ethPaidToBundler, uint256 _netGasSurcharge) =
+-                _settle(ctx, _dConfig.solverGasLimit, gasRefundBeneficiary);
+-
+-            auctionWon = ctx.solverSuccessful;
+-            emit MetacallResult(
+-                msg.sender, userOp.from, auctionWon, ctx.paymentsSuccessful, _ethPaidToBundler, _netGasSurcharge
+-            );
+-        } catch (bytes memory revertData) {
+-            // Bubble up some specific errors
+-            _handleErrors(revertData, _dConfig.callConfig);
+-            // Set lock to FullyLocked to prevent any reentrancy possibility
+-            _setLockPhase(uint8(ExecutionPhase.FullyLocked));
+-
+-            // Refund the msg.value to sender if it errored
+-            // WARNING: If msg.sender is a disposable address such as a session key, make sure to remove ETH from it
+-            // before disposal
+-            if (msg.value != 0) SafeTransferLib.safeTransferETH(msg.sender, msg.value);
+-
+-            // Emit event indicating the metacall failed in `execute()`
+-            emit MetacallResult(msg.sender, userOp.from, false, false, 0, 0);
+-        }
++        // start of munging
++        Context memory ctx = this.execute(_dConfig, userOp, solverOps, _executionEnvironment, _bundler, dAppOp.userOpHash, _isSimulation);
++        _settle(ctx, _dConfig.solverGasLimit, gasRefundBeneficiary);
++        // try this.execute(_dConfig, userOp, solverOps, _executionEnvironment, _bundler, dAppOp.userOpHash, _isSimulation)
++        // returns (Context memory ctx) {
++        //     // Gas Refund to sender only if execution is successful
++        //     (uint256 _ethPaidToBundler, uint256 _netGasSurcharge) =
++        //         _settle(ctx, _dConfig.solverGasLimit, gasRefundBeneficiary);
++
++        //     auctionWon = ctx.solverSuccessful;
++        //     emit MetacallResult(
++        //         msg.sender, userOp.from, auctionWon, ctx.paymentsSuccessful, _ethPaidToBundler, _netGasSurcharge
++        //     );
++        // } catch (bytes memory revertData) {
++        //     // Bubble up some specific errors
++        //     _handleErrors(revertData, _dConfig.callConfig);
++        //     // Set lock to FullyLocked to prevent any reentrancy possibility
++        //     _setLockPhase(uint8(ExecutionPhase.FullyLocked));
++
++        //     // Refund the msg.value to sender if it errored
++        //     // WARNING: If msg.sender is a disposable address such as a session key, make sure to remove ETH from it
++        //     // before disposal
++        //     if (msg.value != 0) SafeTransferLib.safeTransferETH(msg.sender, msg.value);
++
++        //     // Emit event indicating the metacall failed in `execute()`
++        //     emit MetacallResult(msg.sender, userOp.from, false, false, 0, 0);
++        // }
++        // end of munging
+ 
+         // The environment lock is explicitly released here to allow multiple metacalls in a single transaction.
+         _releaseLock();
+@@ -162,7 +166,7 @@
+         }
+ 
+         // UserOp Call
+-        _returnData = _executeUserOperation(ctx, dConfig, userOp, _returnData);
++        // _returnData = _executeUserOperation(ctx, dConfig, userOp, _returnData);
+ 
+         // SolverOps Calls
+         uint256 _winningBidAmount = dConfig.callConfig.exPostBids()
+diff -ruN ../src/contracts/atlas/AtlasVerification.sol contracts/atlas/AtlasVerification.sol
+--- ../src/contracts/atlas/AtlasVerification.sol	2024-11-29 02:55:44.000000000 +0530
++++ contracts/atlas/AtlasVerification.sol	2024-12-09 20:12:23.000000000 +0530
+@@ -50,110 +50,110 @@
+         external
+         returns (ValidCallsResult)
+     {
+-        if (msg.sender != ATLAS) revert AtlasErrors.InvalidCaller();
+-        // Verify that the calldata injection came from the dApp frontend
+-        // and that the signatures are valid.
+-
+-        bytes32 _userOpHash = _getUserOperationHash(userOp, userOp.callConfig.allowsTrustedOpHash());
+-
+-        {
+-            // Check user signature
+-            ValidCallsResult verifyUserResult = _verifyUser(dConfig, userOp, _userOpHash, msgSender, isSimulation);
+-            if (verifyUserResult != ValidCallsResult.Valid) {
+-                return verifyUserResult;
+-            }
+-
+-            // allowUnapprovedDAppSignatories still verifies signature match, but does not check
+-            // if dApp owner approved the signer.
+-            (ValidCallsResult verifyAuctioneerResult, bool allowUnapprovedDAppSignatories) =
+-                _verifyAuctioneer(dConfig, userOp, solverOps, dAppOp, msgSender);
+-
+-            if (verifyAuctioneerResult != ValidCallsResult.Valid && !isSimulation) {
+-                return verifyAuctioneerResult;
+-            }
+-
+-            // Check dapp signature
+-            ValidCallsResult verifyDappResult =
+-                _verifyDApp(dConfig, dAppOp, msgSender, allowUnapprovedDAppSignatories, isSimulation);
+-            if (verifyDappResult != ValidCallsResult.Valid) {
+-                return verifyDappResult;
+-            }
+-        }
+-
+-        // Check if the call configuration is valid
+-        ValidCallsResult _verifyCallConfigResult = _verifyCallConfig(dConfig.callConfig);
+-        if (_verifyCallConfigResult != ValidCallsResult.Valid) {
+-            return _verifyCallConfigResult;
+-        }
+-
+-        // CASE: Solvers trust app to update content of UserOp after submission of solverOp
+-        if (dConfig.callConfig.allowsTrustedOpHash()) {
+-            // SessionKey must match explicitly - cannot be skipped
+-            if (userOp.sessionKey != dAppOp.from && !isSimulation) {
+-                return ValidCallsResult.InvalidAuctioneer;
+-            }
+-
+-            // msgSender (the bundler) must be userOp.from, userOp.sessionKey / dappOp.from, or dappOp.bundler
+-            if (!(msgSender == dAppOp.from || msgSender == dAppOp.bundler || msgSender == userOp.from) && !isSimulation)
+-            {
+-                return ValidCallsResult.InvalidBundler;
+-            }
+-        }
+-
+-        uint256 _solverOpCount = solverOps.length;
+-
+-        {
+-            // Check number of solvers not greater than max, to prevent overflows in `solverIndex`
+-            if (_solverOpCount > _MAX_SOLVERS) {
+-                return ValidCallsResult.TooManySolverOps;
+-            }
+-
+-            // Check if past user's deadline
+-            if (userOp.deadline != 0 && block.number > userOp.deadline) {
+-                return ValidCallsResult.UserDeadlineReached;
+-            }
+-
+-            // Check if past dapp's deadline
+-            if (dAppOp.deadline != 0 && block.number > dAppOp.deadline) {
+-                return ValidCallsResult.DAppDeadlineReached;
+-            }
+-
+-            // Check gas price is within user's limit
+-            if (tx.gasprice > userOp.maxFeePerGas) {
+-                return ValidCallsResult.GasPriceHigherThanMax;
+-            }
+-
+-            // Check that the value of the tx is greater than or equal to the value specified
+-            if (msgValue < userOp.value) {
+-                return ValidCallsResult.TxValueLowerThanCallValue;
+-            }
+-
+-            // Check the call config read at the start of the metacall is same as user expected (as set in userOp)
+-            if (dConfig.callConfig != userOp.callConfig) {
+-                return ValidCallsResult.CallConfigMismatch;
+-            }
+-        }
+-
+-        // Some checks are only needed when call is not a simulation
+-        if (isSimulation) {
+-            // Add all solver ops if simulation
+-            return ValidCallsResult.Valid;
+-        }
+-
+-        // Verify a solver was successfully verified.
+-        if (_solverOpCount == 0) {
+-            if (!dConfig.callConfig.allowsZeroSolvers()) {
+-                return ValidCallsResult.NoSolverOp;
+-            }
+-
+-            if (dConfig.callConfig.needsFulfillment()) {
+-                return ValidCallsResult.NoSolverOp;
+-            }
+-        }
+-
+-        if (_userOpHash != dAppOp.userOpHash) {
+-            return ValidCallsResult.OpHashMismatch;
+-        }
++        // if (msg.sender != ATLAS) revert AtlasErrors.InvalidCaller();
++        // // Verify that the calldata injection came from the dApp frontend
++        // // and that the signatures are valid.
++
++        // bytes32 _userOpHash = _getUserOperationHash(userOp, userOp.callConfig.allowsTrustedOpHash());
++
++        // {
++        //     // Check user signature
++        //     ValidCallsResult verifyUserResult = _verifyUser(dConfig, userOp, _userOpHash, msgSender, isSimulation);
++        //     if (verifyUserResult != ValidCallsResult.Valid) {
++        //         return verifyUserResult;
++        //     }
++
++        //     // allowUnapprovedDAppSignatories still verifies signature match, but does not check
++        //     // if dApp owner approved the signer.
++        //     (ValidCallsResult verifyAuctioneerResult, bool allowUnapprovedDAppSignatories) =
++        //         _verifyAuctioneer(dConfig, userOp, solverOps, dAppOp, msgSender);
++
++        //     if (verifyAuctioneerResult != ValidCallsResult.Valid && !isSimulation) {
++        //         return verifyAuctioneerResult;
++        //     }
++
++        //     // Check dapp signature
++        //     ValidCallsResult verifyDappResult =
++        //         _verifyDApp(dConfig, dAppOp, msgSender, allowUnapprovedDAppSignatories, isSimulation);
++        //     if (verifyDappResult != ValidCallsResult.Valid) {
++        //         return verifyDappResult;
++        //     }
++        // }
++
++        // // Check if the call configuration is valid
++        // ValidCallsResult _verifyCallConfigResult = _verifyCallConfig(dConfig.callConfig);
++        // if (_verifyCallConfigResult != ValidCallsResult.Valid) {
++        //     return _verifyCallConfigResult;
++        // }
++
++        // // CASE: Solvers trust app to update content of UserOp after submission of solverOp
++        // if (dConfig.callConfig.allowsTrustedOpHash()) {
++        //     // SessionKey must match explicitly - cannot be skipped
++        //     if (userOp.sessionKey != dAppOp.from && !isSimulation) {
++        //         return ValidCallsResult.InvalidAuctioneer;
++        //     }
++
++        //     // msgSender (the bundler) must be userOp.from, userOp.sessionKey / dappOp.from, or dappOp.bundler
++        //     if (!(msgSender == dAppOp.from || msgSender == dAppOp.bundler || msgSender == userOp.from) && !isSimulation)
++        //     {
++        //         return ValidCallsResult.InvalidBundler;
++        //     }
++        // }
++
++        // uint256 _solverOpCount = solverOps.length;
++
++        // {
++        //     // Check number of solvers not greater than max, to prevent overflows in `solverIndex`
++        //     if (_solverOpCount > _MAX_SOLVERS) {
++        //         return ValidCallsResult.TooManySolverOps;
++        //     }
++
++        //     // Check if past user's deadline
++        //     if (userOp.deadline != 0 && block.number > userOp.deadline) {
++        //         return ValidCallsResult.UserDeadlineReached;
++        //     }
++
++        //     // Check if past dapp's deadline
++        //     if (dAppOp.deadline != 0 && block.number > dAppOp.deadline) {
++        //         return ValidCallsResult.DAppDeadlineReached;
++        //     }
++
++        //     // Check gas price is within user's limit
++        //     if (tx.gasprice > userOp.maxFeePerGas) {
++        //         return ValidCallsResult.GasPriceHigherThanMax;
++        //     }
++
++        //     // Check that the value of the tx is greater than or equal to the value specified
++        //     if (msgValue < userOp.value) {
++        //         return ValidCallsResult.TxValueLowerThanCallValue;
++        //     }
++
++        //     // Check the call config read at the start of the metacall is same as user expected (as set in userOp)
++        //     if (dConfig.callConfig != userOp.callConfig) {
++        //         return ValidCallsResult.CallConfigMismatch;
++        //     }
++        // }
++
++        // // Some checks are only needed when call is not a simulation
++        // if (isSimulation) {
++        //     // Add all solver ops if simulation
++        //     return ValidCallsResult.Valid;
++        // }
++
++        // // Verify a solver was successfully verified.
++        // if (_solverOpCount == 0) {
++        //     if (!dConfig.callConfig.allowsZeroSolvers()) {
++        //         return ValidCallsResult.NoSolverOp;
++        //     }
++
++        //     if (dConfig.callConfig.needsFulfillment()) {
++        //         return ValidCallsResult.NoSolverOp;
++        //     }
++        // }
++
++        // if (_userOpHash != dAppOp.userOpHash) {
++        //     return ValidCallsResult.OpHashMismatch;
++        // }
+ 
+         return ValidCallsResult.Valid;
+     }
+diff -ruN ../src/contracts/atlas/Escrow.sol contracts/atlas/Escrow.sol
+--- ../src/contracts/atlas/Escrow.sol	2024-11-26 17:59:53.000000000 +0530
++++ contracts/atlas/Escrow.sol	2024-12-11 17:41:10.000000000 +0530
+@@ -451,7 +451,12 @@
+             // Get the uint256 from the memory array
+             assembly {
+                 let dataLocation := add(_data, 0x20)
+-                bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
++                // start of munging
++                // bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
++                let len := mload(_data)
++                if lt(len, 36) { revert(0, 0) }
++                bidAmount := mload(add(dataLocation, sub(len, 32)))
++                // end of munging
+             }
+             return bidAmount;
+         }
+@@ -625,24 +630,34 @@
+         if (!_borrow(solverOp.value)) revert InsufficientEscrow();
+ 
+         // Optimism's SafeCall lib allows us to limit how much returndata gets copied to memory, to prevent OOG attacks.
+-        _success = solverOp.solver.safeCall(
+-            gasleft(),
+-            solverOp.value,
+-            abi.encodeCall(
+-                ISolverContract.atlasSolverCall,
+-                (
+-                    solverOp.from,
++        // start of munging
++        // _success = solverOp.solver.safeCall(
++        //     gasleft(),
++        //     solverOp.value,
++        //     abi.encodeCall(
++        //         ISolverContract.atlasSolverCall,
++        //         (
++        //             solverOp.from,
++        //             ctx.executionEnvironment,
++        //             solverOp.bidToken,
++        //             bidAmount,
++        //             solverOp.data,
++        //             // Only pass the returnData (either from userOp or preOps) if the dApp requires it
++        //             _activeCallConfig().forwardReturnData() ? returnData : new bytes(0)
++        //         )
++        //     )
++        // );
++
++        // if (!_success) revert SolverOpReverted();
++
++        ISolverContract(solverOp.solver).atlasSolverCall(solverOp.from,
+                     ctx.executionEnvironment,
+                     solverOp.bidToken,
+                     bidAmount,
+                     solverOp.data,
+                     // Only pass the returnData (either from userOp or preOps) if the dApp requires it
+-                    _activeCallConfig().forwardReturnData() ? returnData : new bytes(0)
+-                )
+-            )
+-        );
+-
+-        if (!_success) revert SolverOpReverted();
++                    _activeCallConfig().forwardReturnData() ? returnData : new bytes(0));
++        // end of munging
+ 
+         // ------------------------------------- //
+         //            Post-Solver Call           //
+diff -ruN ../src/contracts/atlas/FactoryLib.sol contracts/atlas/FactoryLib.sol
+--- ../src/contracts/atlas/FactoryLib.sol	2024-11-26 17:59:53.000000000 +0530
++++ contracts/atlas/FactoryLib.sol	2024-12-02 15:58:20.000000000 +0530
+@@ -49,7 +49,9 @@
+                 )
+             )
+         );
+-
++// start of munging; to bypass create2 whcih is causing havocing
++require (executionEnvironment.code.length > 0);
++// end of munging
+         if (executionEnvironment.code.length == 0) {
+             assembly {
+                 executionEnvironment := create2(0, add(_creationCode, 32), mload(_creationCode), salt)
+diff -ruN ../src/contracts/solver/SolverBase.sol contracts/solver/SolverBase.sol
+--- ../src/contracts/solver/SolverBase.sol	2024-12-11 20:21:48.000000000 +0530
++++ contracts/solver/SolverBase.sol	2024-12-11 20:33:09.000000000 +0530
+@@ -50,8 +50,11 @@
+         safetyFirst(executionEnvironment, solverOpFrom)
+         payBids(executionEnvironment, bidToken, bidAmount)
+     {
+-        (bool success,) = address(this).call{ value: msg.value }(solverOpData);
+-        if (!success) revert SolverCallUnsuccessful();
++    //  start of munging
++        // (bool success,) = address(this).call{ value: msg.value }(solverOpData);
++        // if (!success) revert SolverCallUnsuccessful();
++        IAtlas(_atlas).borrow(10);
++    //  end of munging
+     }
+ 
+     modifier safetyFirst(address executionEnvironment, address solverOpFrom) {
