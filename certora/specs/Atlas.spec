@@ -4,35 +4,25 @@ using AtlasVerification as AtlasVerification;
 
 methods{ 
     function _.CALL_CONFIG() external => DISPATCHER(true);
-    // _.getCalldataCost() external => DISPATCHER(true);
-    
-    // unresolved external in _._ => DISPATCH [
-    //     // FactoryLib.getOrCreateExecutionEnvironment(address, address, uint32, bytes32),
-    //     // AtlasVerification.validateCalls(Atlas.DAppConfig, Atlas.UserOperation, 
-    //                                     // Atlas.SolverOperation[], Atlas.DAppOperation, uint256, address, bool),
-    //     // Atlas.execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], address, address, bytes32, bool),
-    //     // ExecutionEnvironment.solverPreTryCatch(uint256, Atlas.SolverOperation, bytes),
-    //     // SolverBase.atlasSolverCall(address, address, address, uint256, bytes, bytes),
-    //     FastLaneOnlineControl.postOpsCall(bool, bytes)
-    // ] default HAVOC_ALL;
 
     function _.getDAppConfig(Atlas.UserOperation) external => NONDET;
     function _.initialGasUsed(uint256) external => NONDET;
     function _._computeSalt(address, address, uint32) internal => NONDET;
-    // function _bidFindingIteration(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, Atlas.SolverOperation[] calldata, bytes memory) internal returns uint256 => NONDET;
-    // function _bidKnownIteration(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, Atlas.SolverOperation[] calldata, bytes memory) internal returns uint256 => NONDET;
     function CallBits.exPostBids(uint32) internal returns bool => ALWAYS(false);
-    // function CallBits.exPostBids(uint32) internal returns bool => NONDET;
-    // function AtlasVerification.validateCalls(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation,uint256, address, bool) external returns Atlas.ValidCallsResult => NONDET;
     function AtlasVerification.verifySolverOp(Atlas.SolverOperation, bytes32 ,uint256, address, bool) external returns uint256 => NONDET;
-    // function _._executeUserOperation(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, bytes memory) internal  => NONDET;
-    // function Escrow._executeUserOperation(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, bytes memory) internal returns bytes memory => _executeUserOperationCVL;
     function Escrow._checkSolverBidToken(address, address, uint256) internal returns uint256 => NONDET;
     function Escrow._validateSolverOpDeadline(Atlas.SolverOperation calldata, Atlas.DAppConfig memory) internal returns uint256 => NONDET;
     function Escrow._checkTrustedOpHash(Atlas.DAppConfig memory, bool, Atlas.UserOperation calldata, Atlas.SolverOperation calldata, uint256) internal returns uint256 => NONDET;
     function GasAccounting._updateAnalytics(Atlas.EscrowAccountAccessData memory, bool, uint256) internal => NONDET;
     function Factory._getOrCreateExecutionEnvironment(address, address, uint32) internal returns address => NONDET;
     function _.getCalldataCost(uint256) external => CONSTANT;
+    
+    // getters
+    function getLockEnv() external returns address envfree;
+    function getLockCallConfig() external returns uint32 envfree;
+    function getLockPhase() external returns uint8 envfree;
+    function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => borrowReconcileCVL();
+    
     // checking if this avoids the failed to locate function error
     // function _._allocateValueCall(address, uint256, bytes calldata) internal => NONDET;
     // function _._getCallConfig(uint32) internal => NONDET;
@@ -46,10 +36,19 @@ methods{
 
     // ] default HAVOC_ALL;
 
-    // getters
-    function getLockEnv() external returns address envfree;
-    function getLockCallConfig() external returns uint32 envfree;
-    function getLockPhase() external returns uint8 envfree;
+    // _.getCalldataCost() external => DISPATCHER(true);
+    
+    // unresolved external in _._ => DISPATCH [
+    //     // FactoryLib.getOrCreateExecutionEnvironment(address, address, uint32, bytes32),
+    //     // AtlasVerification.validateCalls(Atlas.DAppConfig, Atlas.UserOperation, 
+    //                                     // Atlas.SolverOperation[], Atlas.DAppOperation, uint256, address, bool),
+    //     // Atlas.execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], address, address, bytes32, bool),
+    //     // ExecutionEnvironment.solverPreTryCatch(uint256, Atlas.SolverOperation, bytes),
+    //     // SolverBase.atlasSolverCall(address, address, address, uint256, bytes, bytes),
+    //     FastLaneOnlineControl.postOpsCall(bool, bytes)
+    // ] default HAVOC_ALL;
+    // function _._executeUserOperation(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, bytes memory) internal  => NONDET;
+    // function Escrow._executeUserOperation(Atlas.Context memory, Atlas.DAppConfig memory, Atlas.UserOperation calldata, bytes memory) internal returns bytes memory => _executeUserOperationCVL;
 }
 /*----------------------------------------------------------------------------------------------------------------
                                                  GHOSTS & HOOKS 
@@ -127,7 +126,19 @@ hook ALL_TLOAD(uint loc) uint v {
                                                  CVL FUNCTIONS
 ----------------------------------------------------------------------------------------------------------------*/
 
+function borrowReconcileCVL() returns (uint256, Atlas.SolverTracker){
+    env e;
+    uint256 amount;
+    borrow(e, amount);
 
+    uint256 maxApprovedGasSpend;
+    reconcile(e, maxApprovedGasSpend);
+
+    uint256 result;
+    Atlas.SolverTracker solverTracker;
+
+    return (result, solverTracker);
+}
 
 
 
@@ -306,33 +317,26 @@ invariant atlasEthBalanceGeSumAccountsSurchargeSolverCall()
         // }
 
 
-// during metacall execution, before _settle(),  Atlas ETH balance = sum of AtlETH accounts {unbonded + bonded + unbonding} + cumulativeSurcharge + deposits - withdrawals
-// https://prover.certora.com/output/11775/c56863334d364e5b9bd6d0172d51728f?anonymousKey=c9a7484725a84b303d12579dbd2ed3adf987b8bb - with validateCall NONDET summary
-// https://prover.certora.com/output/11775/51159d431b5441df964db48da791d95d?anonymousKey=9728790aecd80e499942b1897fa504d51512ec69 - latest run
-// https://prover.certora.com/output/11775/ebd59e95a71e4217a5d0df7b2c8e7957?anonymousKey=6604df6a0635f905673136e7852379d4f8d029fe - without _bidKnownIteration and _bidFindingIteration NONDET
-// https://prover.certora.com/output/11775/2c95bb7652b741888c73929ca14d33ee?anonymousKey=e3f40fc7e27e39578172b925939fa6233043442f - with verifySolverOp and _checkSolverBidToken NONDET
-// https://prover.certora.com/output/11775/aca79dec01ba44eb980ed9628cdc1195?anonymousKey=31b35cf3427000659762cff4d05b229ecf5647b8 - with further simplification across the metacall function 
-// https://prover.certora.com/output/11775/9210014c28cb4143935d829b005e018b?anonymousKey=4e2757e025e534fdfdb846e4d1188925ae468ac8 - with solverOps length > 0 and all the above simplification
-// https://prover.certora.com/output/11775/ad4f643320a54f099f386044f8b016c4?anonymousKey=70b3a9721b0650ae6a0b095d8d71047781f6878b - with John's patch
-// https://prover.certora.com/output/11775/1a05e4e8a04c42d9aefc6e17bbb7f873?anonymousKey=358464c9808d58df823706b15cecb6002c7c0765 - wtih bid known path and basic sanity
-// https://prover.certora.com/output/11775/930ef8e8686242668f7eef3a2253c377?anonymousKey=b421b8c9843045960f7c27f3b88a209beadf24f5 - with bid known path and no sanity
-// https://prover.certora.com/output/11775/2d9761540dcf462dbab6c7085207aa5e?anonymousKey=8dfbc71e171affd9365b67b1e954d5139ba5e299 - with bid finding path and no sanity
-// https://prover.certora.com/output/11775/a12df0b4d607425780975ea845d7151d?anonymousKey=d8c7c5a4b2577f94b4ed19938c4547b67a7f9d80 - with bid finding path and basic sanity
-// https://prover.certora.com/output/11775/e25d3ab6c2504c71b5811576f0ebeee0?anonymousKey=86b7a752a643dcaa1d498c1eacacf27be2ea454a - rerun with John's latest branch bid finding
-// https://prover.certora.com/output/11775/ccf076104d214ff5837b0bc9e6052209?anonymousKey=bd7b69177f106598e488783d2133f54056e6c259 - with john's latest branch and bid known
-// https://prover.certora.com/output/11775/402aef9c2d0d4e3abcaa50d08ff15589?anonymousKey=edcf7a68b7e60ef11010f24f053556c339bcbd0a - with bid known and withdrawls deposits 0 in preserved block
-strong invariant atlasEthBalanceGeSumAccountsSurchargeTransientMetacall()
-    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals
-    filtered {f -> f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
-        {
-            preserved metacall(Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, Atlas.DAppOperation dAppOp, address gasRefundBeneficiary) with (env e) {
-                require solverOps.length > 0;
-                // ghosts tracking transient variables, safe to assume them as 0 before induction step
-                require withdrawals == 0;
-                require deposits == 0;
-                }
-        }
+// Rule checking the invariant with borrow and reconcile 
+// https://prover.certora.com/output/11775/907d46ed060d455f8ecbef92819d5320?anonymousKey=9273000b61e6497ec451022dfc54ad9d8990542d - first run - violation
+// https://prover.certora.com/output/11775/41e8c4bc085a4160b30e6473f49a7249?anonymousKey=87f4f125a08b055c6e8e6ba05b3747f4a7e35013 - with solverOps length > 0 - OOM
+rule borrowReconcileInvCheck(){
 
+    env e;
+    require e.msg.sender != currentContract;
+    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
+
+    Atlas.UserOperation userOp;
+    Atlas.SolverOperation[] solverOps;
+    Atlas.DAppOperation dAppOp;
+    address gasRefundBeneficiary;
+
+    require solverOps.length == 1;
+
+    metacall(e, userOp, solverOps, dAppOp, gasRefundBeneficiary);
+    
+    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
+}
 
 // sanity rule to resolve calls for metaCall
 // https://prover.certora.com/output/11775/f6240b9bce724559bbd05cfa297096be?anonymousKey=3342008d04da9f0f48b25561dfe9ce85c0b7aaef - with DIPATCH list summary for LIB delegate call
@@ -395,25 +399,53 @@ rule solverCallSanity(){
 
 
 // lock() always returns 0
-// https://prover.certora.com/output/11775/321181016f0149538eb6db686a8c0eb1?anonymousKey=dd5221a1fd2ee2b0d1561d0dfd015df054835860 -  first run
+// https://prover.certora.com/output/11775/321181016f0149538eb6db686a8c0eb1?anonymousKey=dd5221a1fd2ee2b0d1561d0dfd015df054835860 -  hardstop
 invariant lockReturnsZero()
-    getLockEnv() == 0 && getLockCallConfig() == 0 && getLockPhase() == 0;
+    getLockEnv() == 0 && getLockCallConfig() == 0 && getLockPhase() == 0
+        {
+            preserved with (env e) {
+                // assuming that Atlas is not the caller
+                require e.msg.sender != currentContract;
+                }
+        }
 
 // metacall
-// https://prover.certora.com/output/11775/c98b238b2be54b84a4f3aa3c1985b317?anonymousKey=a221e5f34dc872bba55e1ce8c6539c35cf1ab164 - first run
+// https://prover.certora.com/output/11775/c98b238b2be54b84a4f3aa3c1985b317?anonymousKey=a221e5f34dc872bba55e1ce8c6539c35cf1ab164 - hardstop
+// https://prover.certora.com/output/11775/37c244355ede45ee8b83e783a43fd62e?anonymousKey=a632b08c596777246591af90c9c9efcdbb2971a7 - with preserved block - OOM
+// 
 invariant lockReturnsZeroMetacall()
     getLockEnv() == 0 && getLockCallConfig() == 0 && getLockPhase() == 0
     filtered {f -> f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
+        {
+            preserved with (env e) {
+                // assuming that Atlas is not the caller
+                require e.msg.sender != currentContract;
+                }
+        }
 
 // Execute
 // https://prover.certora.com/output/11775/30f790c1d72d4b06954b83f6455bc967?anonymousKey=e155aa6717271fb2a1313fe3187ff2fd4879c5b1 - first run
+// https://prover.certora.com/output/11775/ad61a51a57bc49c98e4af9c54efa7d5c?anonymousKey=9aec13fb90e04a45f2d197be965d5d8c15de4be5 - with preserved block - VACUOUS
 invariant lockReturnsZeroExecute()
     getLockEnv() == 0 && getLockCallConfig() == 0 && getLockPhase() == 0
     filtered { f -> f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], address, address, bytes32, bool).selector}
+        {
+            preserved with (env e) {
+                // assuming that Atlas is not the caller
+                require e.msg.sender != currentContract;
+                }
+        }
 
 // Other functions
 // https://prover.certora.com/output/11775/4b67ebaec3f8423a8535d1ea336e269b?anonymousKey=f1d50fa70def0a8ed5ea910c35c82bc66b7459f5 - first run
+// https://prover.certora.com/output/11775/6ea23b968377480693f7609bee4b70ae?anonymousKey=94489c5925564119e0a260649726163c67f6a8ba - with preserved block - VACUOUS
 invariant lockReturnsZeroOtherFunctions()
     getLockEnv() == 0 && getLockCallConfig() == 0 && getLockPhase() == 0
     filtered { f -> f.selector != sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], address, address, bytes32, bool).selector &&
                         f.selector != sig:metacall( Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
+        {
+            preserved with (env e) {
+                // assuming that Atlas is not the caller
+                require e.msg.sender != currentContract;
+                }
+        }

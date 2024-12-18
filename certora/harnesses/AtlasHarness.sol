@@ -34,4 +34,10 @@ contract AtlasHarness is Atlas {
     function getLockPhase() external returns (uint8 phase){
         ( , , phase) = _lock();
     }
+
+ 
+    // function borrowReconcileCallback(uint256 amount, uint256 maxApprovedGasSpend) external {
+    //     borrow(amount);
+    //     reconcile(maxApprovedGasSpend);
+    // }
 }
