@@ -13,3 +13,4 @@ lib
 /broadcast
 lcov.info
 lcov_filtered.info
+emv-*
