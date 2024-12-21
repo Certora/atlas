@@ -17,8 +17,11 @@ methods{
     function GasAccounting._updateAnalytics(Atlas.EscrowAccountAccessData memory, bool, uint256) internal => NONDET;
     function Factory._getOrCreateExecutionEnvironment(address, address, uint32) internal returns address => NONDET;
     function _.getCalldataCost(uint256) external => CONSTANT;
+    function _._getCalldataCost(uint256) internal => CONSTANT; // why ext summary wasn't applied?
     function GasAccounting._settle(Atlas.Context memory, uint256, address) internal returns (uint256, uint256) => settleCVL();
     function Escrow.errorSwitch(bytes4) internal returns (uint256) => NONDET;
+    function EscrowBits.canExecute(uint256) internal returns (bool) => ALWAYS(true);
+    // function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => nothingSolverOp();
 
     // getters
     function getLockEnv() external returns address envfree;
@@ -54,6 +57,15 @@ methods{
     //     FastLaneOnlineControl.postOpsCall(bool, bytes)
     // ] default HAVOC_ALL;
 }
+
+function nothingSolverOp() returns (uint256, Atlas.SolverTracker){
+    uint256 result;
+    Atlas.SolverTracker solverTracker;
+
+    return (result, solverTracker);
+}
+
+
 /*----------------------------------------------------------------------------------------------------------------
                                                  GHOSTS & HOOKS 
 ----------------------------------------------------------------------------------------------------------------*/
@@ -216,6 +228,8 @@ rule atlasEthBalanceGeSumAccountsSurchargeTransientMetacallRule(){
     
     env e;
     require e.msg.sender != currentContract;
+    // invariant atlasEthBalanceEqSumAccountsSurchargeMetacall()
+    // nativeBalances[currentContract] == sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
 
     // Atlas.UserOperation userOp;
