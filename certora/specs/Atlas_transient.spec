@@ -6,7 +6,7 @@ methods{
     function _.CALL_CONFIG() external => DISPATCHER(true);
 
     function _.getDAppConfig(Atlas.UserOperation) external => NONDET;
-    function _.initialGasUsed(uint256) external => NONDET;
+    // function _.initialGasUsed(uint256) external => NONDET;
     function _._computeSalt(address, address, uint32) internal => NONDET;
     //false would lead down the bidKnownIteration path which is simpler 
     function CallBits.exPostBids(uint32) internal returns bool => ALWAYS(false);
@@ -16,9 +16,21 @@ methods{
     function Escrow._checkTrustedOpHash(Atlas.DAppConfig memory, bool, Atlas.UserOperation calldata, Atlas.SolverOperation calldata, uint256) internal returns uint256 => NONDET;
     function GasAccounting._updateAnalytics(Atlas.EscrowAccountAccessData memory, bool, uint256) internal => NONDET;
     function Factory._getOrCreateExecutionEnvironment(address, address, uint32) internal returns address => NONDET;
-    function _.getCalldataCost(uint256) external => CONSTANT;
+    function _.getCalldataCost(uint256 l) external => calldataCostGhost[l] expect (uint256) ALL;
+    function _._getCalldataCost(uint256 l) internal => calldataCostGhost[l] expect (uint256); // why ext summary wasn't applied? because we needed all. but the wrapper also isn't needed
+    function _.initialGasUsed(uint256 l) external => initialGasUsed[l] expect (uint256) ALL;
     function GasAccounting._settle(Atlas.Context memory, uint256, address) internal returns (uint256, uint256) => settleCVL();
     function Escrow.errorSwitch(bytes4) internal returns (uint256) => NONDET;
+    function EscrowBits.canExecute(uint256) internal returns (bool) => ALWAYS(true);
+    // function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => nothingSolverOp();
+
+    function _.preOpsWrapper(Atlas.UserOperation) external => NONDET;
+    function _.userWrapper(Atlas.UserOperation) external => NONDET;
+    function _.solverPreTryCatch(uint256,Atlas.SolverOperation,bytes) external => NONDET;
+    function _.atlasSolverCall(address,address,address,uint256,bytes,bytes) external => NONDET;
+    function _.solverPostTryCatch(Atlas.SolverOperation,bytes,Atlas.SolverTracker) external => NONDET;
+    function _.allocateValue(address,uint256,bytes) external => NONDET; // SG xxx may contribute balance to Atlas, use better summary
+    function _.postOpsWrapper(bool,bytes) external => NONDET;
 
     // getters
     function getLockEnv() external returns address envfree;
@@ -54,10 +66,21 @@ methods{
     //     FastLaneOnlineControl.postOpsCall(bool, bytes)
     // ] default HAVOC_ALL;
 }
+
+function nothingSolverOp() returns (uint256, Atlas.SolverTracker){
+    uint256 result;
+    Atlas.SolverTracker solverTracker;
+
+    return (result, solverTracker);
+}
+
+
 /*----------------------------------------------------------------------------------------------------------------
                                                  GHOSTS & HOOKS 
 ----------------------------------------------------------------------------------------------------------------*/
 
+ghost mapping(uint256 => uint256) calldataCostGhost;
+ghost mapping(uint256 => uint256) initialGasUsed;
 
 // ghost tracking the sum of atlETH bonded balances
 persistent ghost mathint sumOfBonded{
@@ -216,6 +239,8 @@ rule atlasEthBalanceGeSumAccountsSurchargeTransientMetacallRule(){
     
     env e;
     require e.msg.sender != currentContract;
+    // invariant atlasEthBalanceEqSumAccountsSurchargeMetacall()
+    // nativeBalances[currentContract] == sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
 
     // Atlas.UserOperation userOp;

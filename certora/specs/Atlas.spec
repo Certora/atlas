@@ -9,7 +9,7 @@ methods{
     function _.initialGasUsed(uint256) external => NONDET;
     function _._computeSalt(address, address, uint32) internal => NONDET;
     function CallBits.exPostBids(uint32) internal returns bool => ALWAYS(false);
-    function AtlasVerification.verifySolverOp(Atlas.SolverOperation, bytes32 ,uint256, address, bool) external returns uint256 => NONDET;
+    function AtlasVerification.verifySolverOp(Atlas.SolverOperation, bytes32 ,uint256, address, bool) external returns uint256 => NONDET; // xxx
     function Escrow._checkSolverBidToken(address, address, uint256) internal returns uint256 => NONDET;
     function Escrow._validateSolverOpDeadline(Atlas.SolverOperation calldata, Atlas.DAppConfig memory) internal returns uint256 => NONDET;
     function Escrow._checkTrustedOpHash(Atlas.DAppConfig memory, bool, Atlas.UserOperation calldata, Atlas.SolverOperation calldata, uint256) internal returns uint256 => NONDET;
@@ -21,7 +21,7 @@ methods{
     function getLockEnv() external returns address envfree;
     function getLockCallConfig() external returns uint32 envfree;
     function getLockPhase() external returns uint8 envfree;
-    function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => borrowReconcileCVL();
+    function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => borrowReconcileCVL(); // xxx
     
     // checking if this avoids the failed to locate function error
     // function _._allocateValueCall(address, uint256, bytes calldata) internal => NONDET;
