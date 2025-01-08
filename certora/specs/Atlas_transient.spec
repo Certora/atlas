@@ -59,9 +59,6 @@ methods{
         FastLaneOnlineControl.allocateValueCall(address, uint256, bytes)
     ] default HAVOC_ALL;
 
-    unresolved external in _.solverPreTryCatch(uint256, Atlas.SolverOperation, bytes) => DISPATCH [
-        FastLaneOnlineControl.preSolverCall(Atlas.SolverOperation,bytes)
-    ] default HAVOC_ALL;
 
     unresolved external in _.preOpsWrapper(Atlas.UserOperation) => DISPATCH [
         FastLaneOnlineControl.preOpsCall(Atlas.UserOperation)
@@ -78,13 +75,7 @@ methods{
     unresolved external in _._allocateValue(Atlas.Context, Atlas.DAppConfig, uint256, bytes) => DISPATCH [
         ExecutionEnvironment.allocateValue(address, uint256, bytes)
     ] default HAVOC_ALL;
-    function _.solverPreTryCatch(
-        uint256 bidAmount,
-        Atlas.SolverOperation solverOp,
-        bytes returnData
-    ) external => DISPATCHER(true);
-    unresolved external in _._ => DISPATCH(use_fallback=false) [
-    ] default NONDET; 
+
 
 
     function _.atlasSolverCall(
@@ -135,20 +126,24 @@ function dispatchDefault(){
 ----------------------------------------------------------------------------------------------------------------*/
 
 /**
+@title top level functions should preserve the total eth balance with respect to internal accounting  
 @todo - on which functions should this hold 
+@dev metacall() is proved separately 
 **/
-invariant atlasEthBalanceGeSumAccountsSurchargeTransientMetacall()
-    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals
-    filtered {f -> f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
-        {
-            preserved metacall(Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, Atlas.DAppOperation dAppOp, address gasRefundBeneficiary) with (env e) {
-                require solverOps.length > 0;
-                // ghosts tracking transient variables, safe to assume them as 0 before induction step
-                require withdrawals == 0;
-                require deposits == 0;
-                }
-        }
+invariant atlasEthBalanceGeSumAccountsSurcharge()
+    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge 
+    filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
 
+/** @title while a transaction is active this should hold */
+invariant atlasEthBalanceGeSumAccountsSurchargeTransient()
+    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals
+    filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
+    {
+        preserved with (env e) {
+            require getLockPhase() > 0 ;
+            require e.msg.sender != currentContract;
+        }
+    }
 
 rule atlasEthBalanceGeSumAccountsSurchargeTransientMetacallRule(){
     require withdrawals == 0; 
