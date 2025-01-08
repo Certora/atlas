@@ -83,6 +83,9 @@ methods{
         Atlas.SolverOperation solverOp,
         bytes returnData
     ) external => DISPATCHER(true);
+    unresolved external in _._ => DISPATCH(use_fallback=false) [
+    ] default NONDET; 
+
 
     function _.atlasSolverCall(
         address solverOpFrom,

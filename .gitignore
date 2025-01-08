@@ -14,5 +14,5 @@ lib
 lcov.info
 lcov_filtered.info
 emv-*
-.certora_internal/
-certora/munged*
+.certora_internal
+certora/munged/*
