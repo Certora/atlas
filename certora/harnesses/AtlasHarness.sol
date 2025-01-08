@@ -32,7 +32,7 @@ contract AtlasHarness is Atlas {
     }
     
     function getLockPhase() external returns (uint8 phase){
-        ( , , phase) = _lock();
+        phase = _phase();
     }
 
  
