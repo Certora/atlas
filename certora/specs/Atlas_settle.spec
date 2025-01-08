@@ -1,82 +1,8 @@
 import "./ERC20/erc20cvl.spec";
-
-
-/*----------------------------------------------------------------------------------------------------------------
-                                                 GHOSTS & HOOKS 
-----------------------------------------------------------------------------------------------------------------*/
-
-ghost mapping(uint256 => uint256) calldataCostGhost;
-
-
-// ghost tracking the sum of atlETH bonded balances
-persistent ghost mathint sumOfBonded{
-    init_state axiom sumOfBonded == 0;
-}
-// ghost tracking the sum of atlETH unbonded balances
-persistent ghost mathint sumOfUnbonded{
-    init_state axiom sumOfUnbonded == 0;
-}
-// ghost tracking the sum of atlETH unbonding balances
-persistent ghost mathint sumOfUnbonding{
-    init_state axiom sumOfUnbonding == 0;
-}
-
-// ghost tracking the transient variable t_withdrawals
-ghost uint256 withdrawals {
-    init_state axiom withdrawals == 0;
-}
-// ghost tracking the transient variable t_deposits
-ghost uint256 deposits {
-    init_state axiom deposits == 0;
-}
-
-
-// Hooks for bonded balances
-hook Sstore S_accessData[KEY address a].bonded uint112 new_value (uint112 old_value) {
-    sumOfBonded = sumOfBonded - old_value + new_value;
-}
-hook Sload uint112 value S_accessData[KEY address a].bonded {
-     require value <= sumOfBonded;
-}
-
-
-// SSTORE hook for unbonded balances
-hook Sstore s_balanceOf[KEY address a].balance uint112 new_value (uint112 old_value) {
-    sumOfUnbonded = sumOfUnbonded - old_value + new_value;
-}
-
-hook Sload uint112 value s_balanceOf[KEY address a].balance {
-     require value <= sumOfUnbonded;
-}
-
-
-// SSTORE hook for unbonding balances
-hook Sstore s_balanceOf[KEY address a].unbonding uint112 new_value (uint112 old_value) {
-    sumOfUnbonding = sumOfUnbonding - old_value + new_value;
-}
-
-hook Sload uint112 value s_balanceOf[KEY address a].unbonding {
-     require value <= sumOfUnbonding;
-}
-
-// update ghost withdrawals and deposits
-hook ALL_TSTORE(uint256 loc, uint256 v) {
-    if (loc == 7) 
-        withdrawals = v;
-    if (loc == 8) 
-        deposits = v; 
-}
-
-hook ALL_TLOAD(uint loc) uint v {
-    if (loc == 7) 
-        require withdrawals == v; 
-    if (loc == 8) 
-        require deposits == v; 
-}
-
+import "Atlas_ghostsAndHooks.spec";
 
 /*----------------------------------------------------------------------------------------------------------------
-                                                 RULE & INVARIANTS 
+                                                 RULES
 ----------------------------------------------------------------------------------------------------------------*/
 
 
@@ -103,3 +29,22 @@ rule atlasEthBalanceGeSumAccountsSurchargeSettleRule(){
     satisfy true;
 }
 
+
+/** @dev  
+Rule atlasEthBalanceGeSumAccountsSurchargeSettleRule Proved : https://prover.certora.com/output/40726/7eea9911674445cd91778b8544dbdd0d/?anonymousKey=4c16f9414a56f796ed6c3608df28fa926b5d036b
+checked with two mutations:
+https://prover.certora.com/output/40726/999ac9931bf14d5b9629ed3e974a17be/?anonymousKey=aade0ef58628f008403a1893792410ebed0b4c52
+        //mutation1 flip _amountSolverPays and _amountSolverReceives
+        if (_deposits < _withdrawals) {
+            //_amountSolverPays = _withdrawals - _deposits;
+            _amountSolverReceives = _withdrawals - _deposits;
+        } else {
+            //_amountSolverReceives = _deposits - _withdrawals;
+            _amountSolverPays = _deposits - _withdrawals;
+        }
+2.  https://prover.certora.com/output/40726/ecb16e76252f4d46ad634f985ff0b449/?anonymousKey=cecf116e45ea06e6c64bdda8ba494529b7007034
+        // mutation 2 - make sure we reach this option - pay it all
+        if (claimsPaidToBundler != 0) SafeTransferLib.safeTransferETH(gasRefundBeneficiary, address(this).balance);
+        //if (claimsPaidToBundler != 0) SafeTransferLib.safeTransferETH(gasRefundBeneficiary, claimsPaidToBundler); 
+
+*/ 
