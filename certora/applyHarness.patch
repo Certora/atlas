@@ -289,7 +289,7 @@ diff -ruN ../src/contracts/atlas/AtlasVerification.sol contracts/atlas/AtlasVeri
      }
 diff -ruN ../src/contracts/atlas/Escrow.sol contracts/atlas/Escrow.sol
 --- ../src/contracts/atlas/Escrow.sol	2025-01-07 11:59:43.000000000 +0000
-+++ contracts/atlas/Escrow.sol	2025-01-07 17:11:43.000000000 +0000
++++ contracts/atlas/Escrow.sol	2025-01-13 09:41:12.000000000 +0000
 @@ -256,26 +256,26 @@
          internal
          withLockPhase(ExecutionPhase.AllocateValue)

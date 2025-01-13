@@ -37,6 +37,7 @@ methods{
     function getLockEnv() external returns address envfree;
     function getLockCallConfig() external returns uint32 envfree;
     function getLockPhase() external returns uint8 envfree;
+    function getActiveEnvironment() external returns address envfree;
 
     // ND need to check these:
     //false would lead down the bidKnownIteration path which is simpler 
