@@ -123,9 +123,9 @@ hook ALL_TSTORE(uint256 loc, uint256 v) {
 
 hook ALL_TLOAD(uint loc) uint v {
     if (loc == 7) 
-        withdrawals = v; 
+        require withdrawals == v; 
     if (loc == 8) 
-        deposits = v; 
+        require deposits == v; 
 }
 
 /*----------------------------------------------------------------------------------------------------------------

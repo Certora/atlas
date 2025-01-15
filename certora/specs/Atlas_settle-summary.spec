@@ -1,6 +1,6 @@
 methods{ 
     function _.CALL_CONFIG() external => DISPATCHER(true);
-    function GasAccounting._settle(GasAccounting.Context memory, uint256) internal returns (uint256, uint256) => invariantCheck();
+    function GasAccounting._settle(GasAccounting.Context memory, uint256, address) internal returns (uint256, uint256) => invariantCheck();
 }
 /*----------------------------------------------------------------------------------------------------------------
                                                  GHOSTS & HOOKS 
@@ -9,7 +9,7 @@ methods{
 
 // ghost tracking the sum of atlETH bonded balances
 persistent ghost mathint sumOfBonded{
-    init_state axiom sumOfBonded == 0
+    init_state axiom sumOfBonded == 0;
 }
 // ghost tracking the sum of atlETH unbonded balances
 persistent ghost mathint sumOfUnbonded{
