@@ -6,6 +6,7 @@ using SwapIntentDAppControl as SwapIntentDAppControl;
 using V2DAppControl as V2DAppControl;
 // using V2RewardDAppControl as V2RewardDAppControl;
 using ExecutionEnvironment as ExecutionEnvironment;
+using FactoryLib as FactoryLib;
 
 methods{ 
     // view functions - same approximations 
@@ -311,23 +312,35 @@ definition reentrancyOnlyFunctions(method f) returns bool =
 
 	
 definition reentrancyFunction2(method f) returns bool = false
-	        //f.selector == sig:AtlasVerification.removeSignatory(address,address).selector ||
-            //f.selector == sig:AtlasVerification.addSignatory(address,address).selector ||
-            //f.selector == sig:AtlasVerification.initializeGovernance(address).selector ||
-            //f.selector == sig:AtlasVerification.disableDApp(address).selector 
-            //||
-            //f.selector == sig:BaseGasCalculator.renounceOwnership().selector ||
-            //f.selector == sig:BaseGasCalculator.setCalldataLengthOffset(int256).selector ||
-            //f.selector == sig:BaseGasCalculator.transferOwnership(address).selector ||
             //f.selector == sig:DAppIntegration.removeSignatory(address,address).selector ||
             //f.selector == sig:DAppIntegration.addSignatory(address,address).selector ||
             //f.selector == sig:DAppIntegration.initializeGovernance(address).selector ||
             //f.selector == sig:DAppIntegration.disableDApp(address).selector ||
-            // not reentrant f.selector == sig:FastLaneOnlineControl.acceptGovernance().selector ||
+            //f.selector == sig:FastLaneOnlineControl.acceptGovernance().selector ||
             //f.selector == sig:FastLaneOnlineControl.transferGovernance(address).selector
             ;
 definition reentrancyAndTopLevelFunctions(method f) returns bool = 
-            f.selector == sig:borrow(uint256).selector;
+            f.selector == sig:borrow(uint256).selector ||
+            f.selector == sig:AtlasHarness.bond(uint256).selector ||
+            f.selector == sig:AtlasVerification.removeSignatory(address,address).selector ||
+            f.selector == sig:AtlasVerification.addSignatory(address,address).selector ||
+            f.selector == sig:AtlasVerification.initializeGovernance(address).selector ||
+            f.selector == sig:AtlasVerification.disableDApp(address).selector ||
+            f.selector == sig:AtlasVerification.changeDAppGovernance(address,address).selector ||
+            f.selector == sig:BaseGasCalculator.renounceOwnership().selector ||
+            f.selector == sig:BaseGasCalculator.setCalldataLengthOffset(int256).selector ||
+            f.selector == sig:BaseGasCalculator.transferOwnership(address).selector ||
+            f.selector == sig:DAppIntegration.removeSignatory(address,address).selector ||
+            f.selector == sig:DAppIntegration.addSignatory(address,address).selector ||
+            f.selector == sig:DAppIntegration.initializeGovernance(address).selector ||
+            f.selector == sig:DAppIntegration.disableDApp(address).selector ||
+            f.selector == sig:FastLaneOnlineControl.acceptGovernance().selector ||
+            f.selector == sig:FastLaneOnlineControl.transferGovernance(address).selector ||
+            f.selector == sig:FactoryLib.getOrCreateExecutionEnvironment(address,address,uint32,bytes32).selector ||
+            f.selector == sig:depositAndBond(uint256).selector ||
+            f.selector == sig:deposit().selector ||
+            f.isFallback;
+
 
 definition reentrancyFunction(method f) returns bool = reentrancyOnlyFunctions(f) ||  reentrancyAndTopLevelFunctions(f);
 
@@ -385,7 +398,7 @@ rule whoCanChangeStorageInZeroPhase(method f, env e)
 /**
 Prove that reentrant functions can only be executed in a non phase 0 or by authorized contracts or that they just don't change the state 
 **/
-rule reentrancyOnly(method f, env e) filtered{f -> !f.isView && reentrancyOnlyFunctions(f)}
+rule reentrancyOnly(method f, env e) filtered{f -> !f.isView && !reentrancyFunction(f)}
 {
     uint8 _phase = getLockPhase();
     storage init = lastStorage;
@@ -395,18 +408,45 @@ rule reentrancyOnly(method f, env e) filtered{f -> !f.isView && reentrancyOnlyFu
 
     storage final = lastStorage;
     
-    assert _phase > 0 || atlasContracts(e.msg.sender) || final == init || e.msg.sender == msgSenderCalledMetaCall;
+    assert _phase > 0 || atlasContracts(e.msg.sender) || e.msg.sender == msgSenderCalledMetaCall;
+
+}
+
+/**
+Prove that not reentrant functions (top level functions) can only be executed in a phase 0 or
+the are view functions  
+**/
+rule topLevelFunctions(method f, env e) filtered{f -> !f.isView && !reentrancyFunction(f)}
+{
+    uint8 _phase = getLockPhase();
+    storage init = lastStorage;
+
+    // assume we are not within a metacall 
+    require msgSenderCalledMetaCall == 0 ;
+    require e.msg.sender != 0 ;
+    
+    calldataarg args;
+    f(e, args);
+
+    storage final = lastStorage;
+    
+    
+    assert _phase == 0 || init == final ;
 
 }
 
 
-
 // reentrancy functions transient invariant check
+invariant transientInvariant()
+    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals
+    filtered {f -> reentrancyAndTopLevelFunctions(f) }
+    
+
 /**
 @title top level functions should preserve the total eth balance with respect to internal accounting  
 @dev metacall() is proved separately 
 **/
-invariant atlasEthBalanceGeSumAccountsSurcharge()
+invariant solvency()
     nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge 
     filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector &&
     !reentrancyOnlyFunctions(f) }
@@ -442,8 +482,8 @@ rule solverCallTransientInv(env e){
 }
 
 rule internalFuncTransientInv1(env e, method f) filtered{f -> 
-            //not reentrant  f.selector == sig:getExecutionEnvironment(address,address).selector ||
-            //not reentrant f.selector == sig:createExecutionEnvironment(address,address).selector ||
+            f.selector == sig:getExecutionEnvironment(address,address).selector ||
+            f.selector == sig:createExecutionEnvironment(address,address).selector ||
             f.selector == sig:contribute().selector ||
             f.selector == sig:contribute().selector ||
             f.selector == sig:withdrawSurcharge().selector ||
@@ -456,7 +496,12 @@ rule internalFuncTransientInv1(env e, method f) filtered{f ->
             f.selector == sig:borrow(uint256).selector ||
             f.selector == sig:transferSurchargeRecipient(address).selector ||
             f.selector == sig:transferUserERC20(address,address,uint256,address,address).selector ||
-            f.selector == sig:transferDAppERC20(address,address,uint256,address,address).selector}
+            f.selector == sig:transferDAppERC20(address,address,uint256,address,address).selector || 
+            f.selector == sig:FactoryLib.getOrCreateExecutionEnvironment(address,address,uint32,bytes32).selector ||
+            f.selector == sig:depositAndBond(uint256).selector ||
+            f.selector == sig:deposit().selector ||
+            ( f.isFallback && f.contract == FactoryLib)       
+            }
 {
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
     require e.msg.sender != currentContract;
@@ -627,7 +672,7 @@ rule internalFunctionsTransientInvariant1(method f)
 
 rule internalFunctionsTransientInvariant2(method f)
 {
-    require reentrancyFunction2(f);
+    require reentrancyAndTopLevelFunctions(f);
     env e;
     
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
