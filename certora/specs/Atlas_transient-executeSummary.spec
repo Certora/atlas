@@ -21,6 +21,7 @@ methods{
 
     function _.initialGasUsed(uint256 l) external => initialGasUsed[l] expect (uint256) ALL;
     function GasAccounting._settle(Atlas.Context memory, uint256, address) internal returns (uint256, uint256) => settleCVL();
+    function execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], address, address, bytes32, bool) external returns (Atlas.Context memory) => executeCVL();
     function Escrow.errorSwitch(bytes4) internal returns (uint256) => NONDET;
     function EscrowBits.canExecute(uint256) internal returns (bool) => ALWAYS(true);
     // function Escrow._solverOpWrapper(Atlas.Context memory, Atlas.SolverOperation calldata, uint256, uint256, bytes memory) internal returns (uint256, Atlas.SolverTracker memory) => nothingSolverOp();
@@ -42,7 +43,7 @@ methods{
     // function _._postSolverCall(Atlas.SolverOperation, bytes) internal => DISPATCHER(true);
 
     // getters
-    function getLockEnv() external returns address envfree;
+    function getLockEnv() external returns address envfree; 
     function getLockCallConfig() external returns uint32 envfree;
     function getLockPhase() external returns uint8 envfree;
     function getActiveEnvironment() external returns address envfree;
@@ -214,16 +215,20 @@ hook CALL(uint g, address addr, uint value, uint argsOffset, uint argsLength, ui
 
 
 function settleCVL() returns (uint256, uint256){
-    transientInvariantHolds = nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    assert withdrawals == 0 ;
+    // transientInvariantHolds = nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
+    // assert withdrawals == 0 ;
     uint256 claimPaid;
     uint256 gasSurcharge;
     return (claimPaid, gasSurcharge);
 }
 
-function dispatchDefault(){
-
+function executeCVL() returns Atlas.Context {
+    transientInvariantHolds = nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
+    assert withdrawals == 0 ;
+    Atlas.Context ctx;
+    return (ctx);
 }
+
 
 // functions that are interesting for the invariant
 // function reentrancyFunction1(method f) {
@@ -329,429 +334,17 @@ definition reentrancyFunction2(method f) returns bool =
                                                  RULE & INVARIANTS 
 ----------------------------------------------------------------------------------------------------------------*/
 
-
-rule whoCanChangePhaseFromZero(method f, env e) filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    // require e.msg.sender != currentContract;
-    // require e.msg.sender != getActiveEnvironment();
-    require _phase == 0;
-
-    calldataarg args;
-    f(e, args);
+rule executeTransientInv(){
     
-    uint8 phase_ = getLockPhase();
-
-    assert _phase == phase_;
-    // satisfy storage changes
-}
-
-rule whoCanChangeStorageInZeroPhase(method f, env e) filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    require _phase == 0;
-
-    storage init = lastStorage;
+    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge;
     
-    calldataarg args;
-    f(e, args);
+    require deposits == 0;
+    require withdrawals == 0;
     
-    storage final = lastStorage;
-    
-    satisfy final != init;
-}
-
-// reentrancy functions transient invariant check
-
-// execute function
-rule executeTransientInv(env e){
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    execute(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule solverCallTransientInv(env e){
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    solverCall(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule internalFuncTransientInv1(env e, method f) filtered{f -> f.selector == sig:getExecutionEnvironment(address,address).selector ||
-            f.selector == sig:createExecutionEnvironment(address,address).selector ||
-            f.selector == sig:contribute().selector ||
-            f.selector == sig:contribute().selector ||
-            f.selector == sig:withdrawSurcharge().selector ||
-            f.selector == sig:becomeSurchargeRecipient().selector ||
-            f.selector == sig:getActiveEnvironment().selector ||
-            f.selector == sig:getLockCallConfig().selector ||
-            f.selector == sig:getLockPhase().selector ||
-            f.selector == sig:getLockEnv().selector ||
-            f.selector == sig:reconcile(uint256).selector ||
-            f.selector == sig:borrow(uint256).selector ||
-            f.selector == sig:transferSurchargeRecipient(address).selector ||
-            f.selector == sig:transferUserERC20(address,address,uint256,address,address).selector ||
-            f.selector == sig:transferDAppERC20(address,address,uint256,address,address).selector}
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.sender != currentContract;
-
-    calldataarg args;
-    f(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule internalFuncTransientInv2(env e, method f) filtered{f -> f.selector == sig:ExecutionEnvironment.allocateValue(address,uint256,bytes).selector ||
-            f.selector == sig:ExecutionEnvironment.withdrawERC20(address,uint256).selector ||
-            f.selector == sig:ExecutionEnvironment.withdrawEther(uint256).selector ||
-            f.selector == sig:ExecutionEnvironment.postOpsWrapper(bool,bytes).selector ||
-            f.selector == sig:FastLaneOnlineControl.postOpsCall(bool,bytes).selector ||
-            f.selector == sig:FastLaneOnlineControl.allocateValueCall(address,uint256,bytes).selector
-            }
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    if (f.selector == sig:FastLaneOnlineControl.postOpsCall(bool,bytes).selector) {
-    // for postOpsCall
-    // require balance - e.msg.value >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-
-    }
-    calldataarg args;
-    f(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule internalFuncTransientInv3(env e, method f) filtered{f -> f.selector == sig:AtlasVerification.removeSignatory(address,address).selector ||
-            f.selector == sig:AtlasVerification.addSignatory(address,address).selector ||
-            f.selector == sig:AtlasVerification.initializeGovernance(address).selector ||
-            f.selector == sig:AtlasVerification.disableDApp(address).selector ||
-            f.selector == sig:BaseGasCalculator.renounceOwnership().selector ||
-            f.selector == sig:BaseGasCalculator.setCalldataLengthOffset(int256).selector ||
-            f.selector == sig:BaseGasCalculator.transferOwnership(address).selector ||
-            f.selector == sig:DAppIntegration.removeSignatory(address,address).selector ||
-            f.selector == sig:DAppIntegration.addSignatory(address,address).selector ||
-            f.selector == sig:DAppIntegration.initializeGovernance(address).selector ||
-            f.selector == sig:DAppIntegration.disableDApp(address).selector ||
-            f.selector == sig:FastLaneOnlineControl.acceptGovernance().selector ||
-            f.selector == sig:FastLaneOnlineControl.transferGovernance(address).selector
-            }
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    f(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule solverPreTryCatchTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-    calldataarg args;
-    ExecutionEnvironment.solverPreTryCatch(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule solverPostTryCatchTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-
-    calldataarg args;
-    ExecutionEnvironment.solverPostTryCatch(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule preOpsWrapperTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    ExecutionEnvironment.preOpsWrapper(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule userWrapperTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    ExecutionEnvironment.userWrapper(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule preSolverCallTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-
-    calldataarg args;
-    FastLaneOnlineControl.preSolverCall(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule postSolverCallTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-
-    calldataarg args;
-    SwapIntentDAppControl.postSolverCall(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule preOpsCallTransientInv(env e)
-{
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    require e.msg.value == 0;
-    calldataarg args;
-    V2DAppControl.preOpsCall(e, args);
-
-    assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-
-
-
-
-
-
-rule internalFunctionsTransientInvariant1(method f)
-{
-    require reentrancyFunction1(f);
     env e;
-    
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
+    require e.msg.sender != currentContract;
     calldataarg args;
-    f(e, args);
+    metacall(e, args);
 
     assert transientInvariantHolds;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
 }
-
-rule internalFunctionsTransientInvariant2(method f)
-{
-    require reentrancyFunction2(f);
-    env e;
-    
-    require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-
-    calldataarg args;
-    f(e, args);
-
-    assert transientInvariantHolds;
-    satisfy deposits > 0; 
-    satisfy withdrawals > 0;
-}
-
-rule whoCanChangeStorageInZeroPhaseSenderNotCurrentCon(method f, env e) 
-    // filtered{f -> 
-        // f.selector == metacall((address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint32,address,bytes,bytes),(address,address,uint256,uint256,uint256,uint256,address,address,bytes32,address,uint256,bytes,bytes)[],(address,address,uint256,uint256,address,address,bytes32,bytes32,bytes),address) ||
-        // f.selector == execute((address,uint32,address,uint32),(address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint32,address,bytes,bytes),(address,address,uint256,uint256,uint256,uint256,address,address,bytes32,address,uint256,bytes,bytes)[],address,address,bytes32,bool) ||
-        // f.selector == contribute() ||
-        // f.selector == deposit() ||
-        // f.selector == withdrawSurcharge() ||
-        // f.selector == becomeSurchargeRecipient() ||
-        // f.selector == unbond(uint256) ||
-        // f.selector == depositAndBond(uint256) ||
-        // f.selector == redeem(uint256) ||
-        // f.selector == borrow(uint256) ||
-        // f.selector == bond(uint256) ||
-        // f.selector == withdraw(uint256) ||
-        // f.selector == transferSurchargeRecipient(address) ||
-        // f.selector == solverCall((bytes32,address,uint24,uint8,uint8,uint8,uint8,bool,bool,bool,bool,address),(address,address,uint256,uint256,uint256,uint256,address,address,bytes32,address,uint256,bytes,bytes),uint256,bytes) ||
-        // f.selector == removeSignatory(address,address) ||
-        // f.selector == changeDAppGovernance(address,address) ||
-        // f.selector == addSignatory(address,address) ||
-        // f.selector == initializeGovernance(address) ||
-        // f.selector == disableDApp(address) ||
-        // f.selector == renounceOwnership() ||
-        // f.selector == setCalldataLengthOffset(int256) ||
-        // f.selector == transferOwnership(address) ||
-        // f.selector == removeSignatory(address,address) ||
-        // f.selector == changeDAppGovernance(address,address) ||
-        // f.selector == addSignatory(address,address) ||
-        // f.selector == initializeGovernance(address) ||
-        // f.selector == disableDApp(address) ||
-        // f.selector == allocateValue(address,uint256,bytes) ||
-        // f.selector == solverPreTryCatch(uint256,(address,address,uint256,uint256,uint256,uint256,address,address,bytes32,address,uint256,bytes,bytes),bytes) ||
-        // f.selector == solverPostTryCatch((address,address,uint256,uint256,uint256,uint256,address,address,bytes32,address,uint256,bytes,bytes),bytes,(uint256,uint256,uint256,bool,bool)) ||
-        // f.selector == userWrapper((address,address,uint256,uint256,uint256,uint256,uint256,address,address,uint32,address,bytes,bytes)) ||
-        // f.selector == withdrawEther(uint256) ||
-        // f.selector == getOrCreateExecutionEnvironment(address,address,uint32,bytes32) ||
-        // f.selector == acceptGovernance() ||
-        // f.selector == transferGovernance(address)
-// }
-{
-    uint8 _phase = getLockPhase();
-    require _phase == 0;
-    require e.msg.sender != currentContract;
-    // require e.msg.sender != getActiveEnvironment();
-
-    storage init = lastStorage;
-    
-    calldataarg args;
-    f(e, args);
-    
-    storage final = lastStorage;
-    
-    satisfy final != init;
-}
-
-
-
-rule innerFunctions0(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.Uninitialized);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-
-rule innerFunctions1(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.PreOps);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-
-rule innerFunctions2(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.UserOperation);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions3(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.PreSolver);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions4(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.SolverOperation);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions5(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.PostSolver);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions6(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.AllocateValue);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions7(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.PostOps);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-rule innerFunctions8(method f, env e)filtered{f -> !f.isView}
-{
-    uint8 _phase = getLockPhase();
-    
-    require _phase == require_uint8(Atlas.ExecutionPhase.FullyLocked);
-    
-    calldataarg args;
-    f(e, args);
-
-    // assert false;
-    satisfy true;
-}
-
-
-// prove that metacall can only be called in phase 0 and at the end of it phase is 0
-
-

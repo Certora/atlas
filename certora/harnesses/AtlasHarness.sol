@@ -35,6 +35,9 @@ contract AtlasHarness is Atlas {
         phase = _phase();
     }
 
+    function getActiveEnvironment() external returns (address activeEnv){
+        activeEnv = _activeEnvironment();
+    }
  
     // function borrowReconcileCallback(uint256 amount, uint256 maxApprovedGasSpend) external {
     //     borrow(amount);
