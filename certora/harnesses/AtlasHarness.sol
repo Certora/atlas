@@ -23,19 +23,19 @@ contract AtlasHarness is Atlas {
     { }
 
 
-    function getLockEnv() external returns (address activeEnv){
+    function getLockEnv() view external returns (address activeEnv){
         (activeEnv, , )  = _lock();
     }
     
-    function getLockCallConfig() external returns (uint32 callConfig){
+    function getLockCallConfig() view external returns (uint32 callConfig){
         ( , callConfig, ) = _lock();
     }
     
-    function getLockPhase() external returns (uint8 phase){
+    function getLockPhase() view external returns (uint8 phase){
         phase = _phase();
     }
 
-    function getActiveEnvironment() external returns (address activeEnv){
+    function getActiveEnvironment() view external returns (address activeEnv){
         activeEnv = _activeEnvironment();
     }
  
