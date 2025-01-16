@@ -1,5 +1,7 @@
 import {Atlas} from "../munged/contracts/atlas/Atlas.sol";
-contract AtlasHarness is Atlas {
+
+import "../munged/contracts/types/LockTypes.sol"; 
+contract AtlasHarnessWithSettle is Atlas {
         constructor(
         uint256 escrowDuration,
         uint256 atlasSurchargeRate,
@@ -23,24 +25,21 @@ contract AtlasHarness is Atlas {
     { }
 
 
-    function getLockEnv() view external returns (address activeEnv){
+    function getLockEnv() external returns (address activeEnv){
         (activeEnv, , )  = _lock();
     }
     
-    function getLockCallConfig() view external returns (uint32 callConfig){
+    function getLockCallConfig() external returns (uint32 callConfig){
         ( , callConfig, ) = _lock();
     }
     
-    function getLockPhase() view external returns (uint8 phase){
-        phase = _phase();
+    function getLockPhase() external returns (uint8 phase){
+        ( , , phase) = _lock();
     }
 
-    function getActiveEnvironment() view external returns (address activeEnv){
-        activeEnv = _activeEnvironment();
-    }
  
-    // function borrowReconcileCallback(uint256 amount, uint256 maxApprovedGasSpend) external {
-    //     borrow(amount);
-    //     reconcile(maxApprovedGasSpend);
-    // }
+    function settle(Context memory ctx, uint256 solverGasLimit,
+        address gasRefundBeneficiary) external returns (uint256, uint256) {
+        return _settle(ctx, solverGasLimit, gasRefundBeneficiary);
+    }
 }

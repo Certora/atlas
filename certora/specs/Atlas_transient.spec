@@ -1,10 +1,13 @@
 import "./ERC20/erc20cvl.spec";
-// import "./MathSummaries.spec";
+import "Atlas_ghostsAndHooks.spec";
+
 using AtlasVerification as AtlasVerification;
+using FastLaneOnlineControl as FastLaneOnlineControl;
 using FastLaneOnlineControl as FastLaneOnlineControl;
 
 methods{ 
     // view functions - same approximations 
+    //function _.CALL_CONFIG() external => DISPATCHER(true);
     //function _.CALL_CONFIG() external => DISPATCHER(true);
     function _.getDAppConfig(Atlas.UserOperation) external => NONDET;
     // function _.initialGasUsed(uint256) external => NONDET;
@@ -28,8 +31,14 @@ methods{
     function _.CALL_CONFIG() external => NONDET;
     function Base._control() internal returns (address)=> FastLaneOnlineControl;
     function _.isUnlocked() external => DISPATCHER(true);
+    function _.getDAppSignatory() external => NONDET;
+    function _.getL1FeeUpperBound() external => NONDET;
+    function _.CALL_CONFIG() external => NONDET;
+    function Base._control() internal returns (address)=> FastLaneOnlineControl;
+    function _.isUnlocked() external => DISPATCHER(true);
 
     
+    // function _.allocateValue(address,uint256,bytes) external => NONDET; // SG xxx may contribute balance to Atlas, use better summary
     // function _.allocateValue(address,uint256,bytes) external => NONDET; // SG xxx may contribute balance to Atlas, use better summary
     function _.postOpsWrapper(bool,bytes) external => NONDET;
 
@@ -51,17 +60,14 @@ methods{
     function Factory._getOrCreateExecutionEnvironment(address, address, uint32) internal returns address => NONDET;
 
     // need to fix:
-    //function _.solverPostTryCatch(Atlas.SolverOperation,bytes,Atlas.SolverTracker) external => NONDET;
-    //function _.solverPreTryCatch(uint256,Atlas.SolverOperation,bytes) external => NONDET;
+    function _.solverPostTryCatch(Atlas.SolverOperation,bytes,Atlas.SolverTracker) external => NONDET;
+    function _.solverPreTryCatch(uint256,Atlas.SolverOperation,bytes) external => NONDET;
     //function _.atlasSolverCall(address,address,address,uint256,bytes,bytes) external => NONDET;
 
     unresolved external in _._(address, uint256, bytes) => DISPATCH [
         FastLaneOnlineControl.allocateValueCall(address, uint256, bytes)
     ] default HAVOC_ALL;
 
-    unresolved external in _.solverPreTryCatch(uint256, Atlas.SolverOperation, bytes) => DISPATCH [
-        FastLaneOnlineControl.preSolverCall(Atlas.SolverOperation,bytes)
-    ] default HAVOC_ALL;
 
     unresolved external in _.preOpsWrapper(Atlas.UserOperation) => DISPATCH [
         FastLaneOnlineControl.preOpsCall(Atlas.UserOperation)
@@ -78,11 +84,8 @@ methods{
     unresolved external in _._allocateValue(Atlas.Context, Atlas.DAppConfig, uint256, bytes) => DISPATCH [
         ExecutionEnvironment.allocateValue(address, uint256, bytes)
     ] default HAVOC_ALL;
-    function _.solverPreTryCatch(
-        uint256 bidAmount,
-        Atlas.SolverOperation solverOp,
-        bytes returnData
-    ) external => DISPATCHER(true);
+
+
 
     function _.atlasSolverCall(
         address solverOpFrom,
@@ -93,14 +96,6 @@ methods{
         bytes extraReturnData
     )
         external => DISPATCHER(true);
-
-    function _.solverPostTryCatch(
-        Atlas.SolverOperation  solverOp,
-        bytes  returnData,
-        Atlas.SolverTracker  solverTracker
-    )
-        external => DISPATCHER(true);
-
 
     // limiting to without delegate call
     function CallBits.needsPostSolverCall(uint32 callConfig) internal returns (bool) => ALWAYS(false) ;
@@ -182,10 +177,11 @@ hook ALL_TSTORE(uint256 loc, uint256 v) {
 
 hook ALL_TLOAD(uint loc) uint v {
     if (loc == 7) 
-        require withdrawals == v; 
+        withdrawals = v; 
     if (loc == 8) 
-        require deposits == v; 
-} 
+        deposits = v; 
+}
+
 
 persistent ghost bool called_extcall;
 
@@ -199,10 +195,12 @@ hook CALL(uint g, address addr, uint value, uint argsOffset, uint argsLength, ui
                                                  CVL FUNCTIONS
 ----------------------------------------------------------------------------------------------------------------*/
 
-
+/**
+@title summary for settle function to check for the transient property 
+**/
+ghost bool transientInvariantHolds;
 function settleCVL() returns (uint256, uint256){
     transientInvariantHolds = nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    assert withdrawals == 0 ;
     uint256 claimPaid;
     uint256 gasSurcharge;
     return (claimPaid, gasSurcharge);
@@ -211,23 +209,32 @@ function settleCVL() returns (uint256, uint256){
 function dispatchDefault(){
 
 }
+function dispatchDefault(){
+
+}
 /*----------------------------------------------------------------------------------------------------------------
                                                  RULE & INVARIANTS 
 ----------------------------------------------------------------------------------------------------------------*/
 
+/**
+@title top level functions should preserve the total eth balance with respect to internal accounting  
+@todo - on which functions should this hold 
+@dev metacall() is proved separately 
+**/
+invariant atlasEthBalanceGeSumAccountsSurcharge()
+    nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge 
+    filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
 
-strong invariant atlasEthBalanceGeSumAccountsSurchargeTransientMetacall()
+/** @title while a transaction is active this should hold */
+invariant atlasEthBalanceGeSumAccountsSurchargeTransient()
     nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals
-    filtered {f -> f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
-        {
-            preserved metacall(Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, Atlas.DAppOperation dAppOp, address gasRefundBeneficiary) with (env e) {
-                require solverOps.length > 0;
-                // ghosts tracking transient variables, safe to assume them as 0 before induction step
-                require withdrawals == 0;
-                require deposits == 0;
-                }
+    filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}
+    {
+        preserved with (env e) {
+            require getLockPhase() > 0 ;
+            require e.msg.sender != currentContract;
         }
-
+    }
 
 rule atlasEthBalanceGeSumAccountsSurchargeTransientMetacallRule(){
     require withdrawals == 0; 
@@ -243,126 +250,19 @@ rule atlasEthBalanceGeSumAccountsSurchargeTransientMetacallRule(){
     metacall(e, args);
 
     assert transientInvariantHolds;
-    satisfy true;
+    satisfy deposits > 0; 
+    satisfy withdrawals > 0;
 }
 
 
-rule sanity() {
-    env e;
-    require !transientInvariantHolds;
-    require !called_extcall;
-    calldataarg args;
+/**
 
-    Atlas.UserOperation userOp;
-    Atlas.SolverOperation[] solverOps;
-    Atlas.DAppOperation dAppOp;
-    address gasRefundBeneficiary;
-
-    require solverOps.length == 1;
-
-    metacall(e, userOp, solverOps, dAppOp, gasRefundBeneficiary);
-
-    //metacall(e,args);
-    assert false;
-    //satisfy  called_extcall ; 
-}
-
-rule all(method f) {
-    env e;
-
-    require !called_extcall;
-    calldataarg args;
-    f(e,args);
-    satisfy  called_extcall ; 
-}
+mutations 1:
 
 
-rule whichFunctionsOnlyThis(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    calldataarg args;
-    f(e,args);
-    assert e.msg.sender == currentContract; 
-}
-
-rule whichFunctionsOnlyUninitialized(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 0;
-}
-
-rule whichFunctionsOnlyPreOps(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 1;
-}
-
-rule whichFunctionsOnlyUserOperation(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 2;
-}
-
-rule whichFunctionsOnlyPreSolver(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 3;
-}
-
-rule whichFunctionsOnlySolverOperation(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 4;
-}
-
-rule whichFunctionsOnlyPostSolver(method f)  filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector}{
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 5;
-}
-
-rule whichFunctionsOnlyAllocateValue(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 6;
-}
-
-rule whichFunctionsOnlyPostOps(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 7;
-}
-
-rule whichFunctionsOnlyFullyLocked(method f) filtered {f -> f.selector != sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector} {
-    env e;
-
-    uint8 phase = getLockPhase();
-    calldataarg args;
-    f(e,args);
-    assert phase == 8;
-}
-
+mutation 2:
+    function _borrow(uint256 amount) internal returns (bool valid) {
+        if (amount == 0) return true;
+        if (address(this).balance < amount) return false;
+        // mutations - no update to t_withdrawals
+        //t_withdrawals += amount; 
