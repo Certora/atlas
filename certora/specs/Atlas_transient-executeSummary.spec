@@ -215,8 +215,6 @@ hook CALL(uint g, address addr, uint value, uint argsOffset, uint argsLength, ui
 
 
 function settleCVL() returns (uint256, uint256){
-    // transientInvariantHolds = nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
-    // assert withdrawals == 0 ;
     uint256 claimPaid;
     uint256 gasSurcharge;
     return (claimPaid, gasSurcharge);
@@ -334,7 +332,7 @@ definition reentrancyFunction2(method f) returns bool =
                                                  RULE & INVARIANTS 
 ----------------------------------------------------------------------------------------------------------------*/
 
-rule executeTransientInv(){
+rule executeMetacallTransientInv(){
     
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge;
     

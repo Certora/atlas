@@ -46,6 +46,7 @@ methods{
     function getLockCallConfig() external returns uint32 envfree;
     function getLockPhase() external returns uint8 envfree;
     function getActiveEnvironment() external returns address envfree;
+    function Escrow.userWrapperEmpty() internal returns (bool, bytes memory) => userWrapperCVL();
 
     // ND need to check these:
     //false would lead down the bidKnownIteration path which is simpler 
@@ -223,6 +224,13 @@ function settleCVL() returns (uint256, uint256){
 
 function dispatchDefault(){
 
+}
+
+function userWrapperCVL() returns (bool, bytes){
+    bool _success;
+    bytes _data;
+
+    return (_success, _data);
 }
 
 // functions that are interesting for the invariant
@@ -502,8 +510,9 @@ rule userWrapperTransientInv(env e)
 {
     require nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
 
-    calldataarg args;
-    ExecutionEnvironment.userWrapper(e, args);
+    Atlas.UserOperation userOp;
+    userWrapperHarness(e, userOp);
+    // ExecutionEnvironment.userWrapper(e, args);
 
     assert nativeBalances[currentContract] >= sumOfBonded + sumOfUnbonded + sumOfUnbonding + currentContract.S_cumulativeSurcharge + deposits - withdrawals;
     satisfy deposits > 0; 
