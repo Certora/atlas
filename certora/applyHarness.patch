@@ -1,0 +1,320 @@
+diff -ruN ../src/contracts/atlas/Atlas.sol contracts/atlas/Atlas.sol
+--- ../src/contracts/atlas/Atlas.sol	2025-05-30 16:22:17
++++ contracts/atlas/Atlas.sol	2025-05-30 16:43:05
+@@ -133,9 +133,12 @@
+         // userOpHash has already been calculated and verified in validateCalls at this point, so rather
+         // than re-calculate it, we can simply take it from the dAppOp here. It's worth noting that this will
+         // be either a TRUSTED or DEFAULT hash, depending on the allowsTrustedOpHash setting.
+-        try this.execute{ gas: _gasLimit }(
++        // start of munging
++        // try this.execute{ gas: _gasLimit }(
++        Context memory ctx = this.execute{ gas: _gasLimit }(
+             _dConfig, userOp, solverOps, dAppOp.userOpHash, _executionEnvironment, _bundler, _isSimulation
+-        ) returns (Context memory ctx) {
++        );
++        // ) returns (Context memory ctx) {
+             GasLedger memory _gL = t_gasLedger.toGasLedger(); // Final load, no need to persist changes after this
+             uint256 _unreachedCalldataValuePaid;
+ 
+@@ -156,22 +159,23 @@
+             (uint256 _ethPaidToBundler, uint256 _netGasSurcharge) =
+                 _settle(ctx, _gL, _gasMarker, gasRefundBeneficiary, _unreachedCalldataValuePaid);
+ 
+-            auctionWon = ctx.solverSuccessful;
+-            emit MetacallResult(msg.sender, userOp.from, auctionWon, _ethPaidToBundler, _netGasSurcharge);
+-        } catch (bytes memory revertData) {
+-            // Bubble up some specific errors
+-            _handleErrors(revertData, _dConfig.callConfig);
+-            // Set lock to FullyLocked to prevent any reentrancy possibility
+-            _setLockPhase(uint8(ExecutionPhase.FullyLocked));
++        //     auctionWon = ctx.solverSuccessful;
++        //     emit MetacallResult(msg.sender, userOp.from, auctionWon, _ethPaidToBundler, _netGasSurcharge);
++        // } catch (bytes memory revertData) {
++        //     // Bubble up some specific errors
++        //     _handleErrors(revertData, _dConfig.callConfig);
++        //     // Set lock to FullyLocked to prevent any reentrancy possibility
++        //     _setLockPhase(uint8(ExecutionPhase.FullyLocked));
+ 
+-            // Refund the msg.value to sender if it errored
+-            // WARNING: If msg.sender is a disposable address such as a session key, make sure to remove ETH from it
+-            // before disposal
+-            if (msg.value != 0) SafeTransferLib.safeTransferETH(msg.sender, msg.value);
++        //     // Refund the msg.value to sender if it errored
++        //     // WARNING: If msg.sender is a disposable address such as a session key, make sure to remove ETH from it
++        //     // before disposal
++        //     if (msg.value != 0) SafeTransferLib.safeTransferETH(msg.sender, msg.value);
+ 
+-            // Emit event indicating the metacall failed in `execute()`
+-            emit MetacallResult(msg.sender, userOp.from, false, 0, 0);
+-        }
++        //     // Emit event indicating the metacall failed in `execute()`
++        //     emit MetacallResult(msg.sender, userOp.from, false, 0, 0);
++        // }
++        // end of munging
+ 
+         // The environment lock is explicitly released here to allow multiple metacalls in a single transaction.
+         _releaseLock();
+diff -ruN ../src/contracts/atlas/Escrow.sol contracts/atlas/Escrow.sol
+--- ../src/contracts/atlas/Escrow.sol	2025-05-14 15:01:53
++++ contracts/atlas/Escrow.sol	2025-05-16 15:10:11
+@@ -281,24 +281,24 @@
+         internal
+         withLockPhase(ExecutionPhase.AllocateValue)
+     {
+-        uint256 _dappGasWaterMark = gasleft();
++        // uint256 _dappGasWaterMark = gasleft();
+ 
+-        (bool _success,) = ctx.executionEnvironment.call{ gas: ctx.dappGasLeft }(
+-            abi.encodePacked(
+-                abi.encodeCall(
+-                    IExecutionEnvironment.allocateValue, (ctx.solverSuccessful, dConfig.bidToken, bidAmount, returnData)
+-                ),
+-                ctx.setAndPack(ExecutionPhase.AllocateValue)
+-            )
+-        );
++        // (bool _success,) = ctx.executionEnvironment.call{ gas: ctx.dappGasLeft }(
++        //     abi.encodePacked(
++        //         abi.encodeCall(
++        //             IExecutionEnvironment.allocateValue, (ctx.solverSuccessful, dConfig.bidToken, bidAmount, returnData)
++        //         ),
++        //         ctx.setAndPack(ExecutionPhase.AllocateValue)
++        //     )
++        // );
+ 
+-        _updateDAppGasLeft(ctx, _dappGasWaterMark);
++        // _updateDAppGasLeft(ctx, _dappGasWaterMark);
+ 
+-        // Revert if allocateValue failed at any point.
+-        if (!_success) {
+-            if (ctx.isSimulation) revert AllocateValueSimFail();
+-            revert AllocateValueFail();
+-        }
++        // // Revert if allocateValue failed at any point.
++        // if (!_success) {
++        //     if (ctx.isSimulation) revert AllocateValueSimFail();
++        //     revert AllocateValueFail();
++        // }
+     }
+ 
+     /// @notice Adjusts the gas ledger before evaluating a SolverOperation.
+@@ -476,7 +476,12 @@
+             // Get the uint256 from the memory array
+             assembly {
+                 let dataLocation := add(_data, 0x20)
+-                bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
++                // start of munging
++                // bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
++                let len := mload(_data)
++                if lt(len, 36) { revert(0, 0) }
++                bidAmount := mload(add(dataLocation, sub(len, 32)))
++                // end of munging
+             }
+             return bidAmount;
+         }
+@@ -564,6 +569,11 @@
+         } else {
+             // If solverCall() failed, catch the error and encode the failure case in the result uint accordingly.
+             bytes4 _errorSwitch = bytes4(_data);
++            result = errorSwitch(_errorSwitch);
++        }
++    }
++
++    function errorSwitch(bytes4 _errorSwitch) internal returns (uint256 result){
+             if (_errorSwitch == AlteredControl.selector) {
+                 result = 1 << uint256(SolverOutcome.AlteredControl);
+             } else if (_errorSwitch == InsufficientEscrow.selector) {
+@@ -588,9 +598,8 @@
+             } else {
+                 result = 1 << uint256(SolverOutcome.EVMError);
+             }
+-        }
+     }
+-
++    
+     /// @notice Executes the SolverOperation logic, including preSolver and postSolver hooks via the Execution
+     /// Environment, as well as the actual solver call directly from Atlas to the solver contract.
+     /// @param ctx The Context struct containing lock data and the Execution Environment address.
+@@ -660,12 +669,13 @@
+         // to make - a better outcome for the bid recipient.
+ 
+         // Optimism's SafeCall lib allows us to limit how much returndata gets copied to memory, to prevent OOG attacks.
+-        _success = solverOp.solver.safeCall(
+-            gasleft(),
+-            solverOp.value,
+-            abi.encodeCall(
+-                ISolverContract.atlasSolverCall,
+-                (
++        ISolverContract(solverOp.solver).atlasSolverCall(
++        // _success = solverOp.solver.safeCall(
++        //     gasleft(),
++        //     solverOp.value,
++        //     abi.encodeCall(
++        //         ISolverContract.atlasSolverCall,
++        //         (
+                     solverOp.from,
+                     ctx.executionEnvironment,
+                     solverOp.bidToken,
+@@ -673,11 +683,11 @@
+                     solverOp.data,
+                     // Only pass the returnData (either from userOp or preOps) if the dApp requires it
+                     _callConfig.forwardReturnData() ? returnData : new bytes(0)
+-                )
+-            )
++        //         )
++        //     )
+         );
+ 
+-        if (!_success) revert SolverOpReverted();
++        // if (!_success) revert SolverOpReverted();
+ 
+         // ------------------------------------- //
+         //            Post-Solver Call           //
+diff -ruN ../src/contracts/atlas/FactoryLib.sol contracts/atlas/FactoryLib.sol
+--- ../src/contracts/atlas/FactoryLib.sol	2025-05-14 15:00:56
++++ contracts/atlas/FactoryLib.sol	2025-05-15 18:09:02
+@@ -49,11 +49,13 @@
+                 )
+             )
+         );
+-
++// start of munging; to bypass create2 whcih is causing havocing
++require (executionEnvironment.code.length > 0);
++// end of munging
+         if (executionEnvironment.code.length == 0) {
+-            assembly {
+-                executionEnvironment := create2(0, add(_creationCode, 32), mload(_creationCode), salt)
+-            }
++            // assembly {
++                // executionEnvironment := create2(0, add(_creationCode, 32), mload(_creationCode), salt)
++            // }
+             emit AtlasEvents.ExecutionEnvironmentCreated(user, executionEnvironment);
+         }
+     }
+diff -ruN ../src/contracts/common/ExecutionBase.sol contracts/common/ExecutionBase.sol
+--- ../src/contracts/common/ExecutionBase.sol	2025-05-14 15:00:56
++++ contracts/common/ExecutionBase.sol	2025-05-15 18:09:02
+@@ -283,13 +283,13 @@
+     /// @param token The address of the ERC20 token contract.
+     /// @param amount The amount of tokens to transfer and approve.
+     /// @param destination The address approved to spend the tokens from the ExecutionEnvironment.
+-    function _getAndApproveUserERC20(address token, uint256 amount, address destination) internal {
+-        if (token == address(0) || amount == 0) return;
++    // function _getAndApproveUserERC20(address token, uint256 amount, address destination) internal {
++    //     if (token == address(0) || amount == 0) return;
+ 
+-        // Pull tokens from user to ExecutionEnvironment
+-        _transferUserERC20(token, address(this), amount);
++    //     // Pull tokens from user to ExecutionEnvironment
++    //     _transferUserERC20(token, address(this), amount);
+ 
+-        // Approve destination to spend the tokens from ExecutionEnvironment
+-        SafeTransferLib.safeApprove(token, destination, amount);
+-    }
++    //     // Approve destination to spend the tokens from ExecutionEnvironment
++    //     SafeTransferLib.safeApprove(token, destination, amount);
++    // }
+ }
+diff -ruN ../src/contracts/common/ExecutionEnvironment.sol contracts/common/ExecutionEnvironment.sol
+--- ../src/contracts/common/ExecutionEnvironment.sol	2025-05-14 15:00:56
++++ contracts/common/ExecutionEnvironment.sol	2025-05-15 18:55:23
+@@ -49,9 +49,9 @@
+         bytes memory _preOpsData = _forward(abi.encodeCall(IDAppControl.preOpsCall, userOp));
+ 
+         bool _success;
+-        (_success, _preOpsData) = _control().delegatecall(_preOpsData);
++        // (_success, _preOpsData) = _control().delegatecall(_preOpsData);
+ 
+-        if (!_success) revert AtlasErrors.PreOpsDelegatecallFail();
++        // if (!_success) revert AtlasErrors.PreOpsDelegatecallFail();
+ 
+         _preOpsData = abi.decode(_preOpsData, (bytes));
+         return _preOpsData;
+@@ -77,12 +77,12 @@
+         bool _success;
+ 
+         if (_config().needsDelegateUser()) {
+-            (_success, returnData) = userOp.dapp.delegatecall(_data);
+-            if (!_success) revert AtlasErrors.UserWrapperDelegatecallFail();
++            // (_success, returnData) = userOp.dapp.delegatecall(_data);
++            // if (!_success) revert AtlasErrors.UserWrapperDelegatecallFail();
+         } else {
+             // regular user call - executed at regular destination and not performed locally
+-            (_success, returnData) = userOp.dapp.call{ value: userOp.value }(_data);
+-            if (!_success) revert AtlasErrors.UserWrapperCallFail();
++            // (_success, returnData) = userOp.dapp.call{ value: userOp.value }(_data);
++            // if (!_success) revert AtlasErrors.UserWrapperCallFail();
+         }
+     }
+ 
+@@ -128,7 +128,8 @@
+             bool _success;
+ 
+             bytes memory _data = _forward(abi.encodeCall(IDAppControl.preSolverCall, (solverOp, returnData)));
+-            (_success,) = _control().delegatecall(_data);
++            // (_success,) = _control().delegatecall(_data);
++            _success = true;
+ 
+             if (!_success) revert AtlasErrors.PreSolverFailed();
+         }
+@@ -173,9 +174,9 @@
+             bool _success;
+ 
+             bytes memory _data = _forward(abi.encodeCall(IDAppControl.postSolverCall, (solverOp, returnData)));
+-            (_success,) = _control().delegatecall(_data);
++            // (_success,) = _control().delegatecall(_data);
+ 
+-            if (!_success) revert AtlasErrors.PostSolverFailed();
++            // if (!_success) revert AtlasErrors.PostSolverFailed();
+         }
+ 
+         // bidValue is not inverted; Higher bids are better; solver must deposit >= bidAmount
+@@ -224,7 +225,8 @@
+         allocateData =
+             _forward(abi.encodeCall(IDAppControl.allocateValueCall, (solved, bidToken, bidAmount, allocateData)));
+ 
+-        (bool _success,) = _control().delegatecall(allocateData);
++        // (bool _success,) = _control().delegatecall(allocateData);
++        bool _success;
+         if (!_success) revert AtlasErrors.AllocateValueDelegatecallFail();
+ 
+         uint256 _balance = address(this).balance;
+diff -ruN ../src/contracts/examples/fastlane-online/FastLaneControl.sol contracts/examples/fastlane-online/FastLaneControl.sol
+--- ../src/contracts/examples/fastlane-online/FastLaneControl.sol	2025-05-14 15:01:53
++++ contracts/examples/fastlane-online/FastLaneControl.sol	2025-05-15 18:13:25
+@@ -105,8 +105,8 @@
+             (SwapIntent memory _swapIntent,) = abi.decode(returnData, (SwapIntent, BaselineCall));
+             _sendTokensToUser(_swapIntent);
+ 
+-            (address _winningSolver,,) = IAtlas(ATLAS).solverLockData();
+-            IFastLaneOnline(CONTROL).setWinningSolver(_winningSolver);
++            // (address _winningSolver,,) = IAtlas(ATLAS).solverLockData();
++            // IFastLaneOnline(CONTROL).setWinningSolver(_winningSolver);
+             return;
+         }
+ 
+@@ -172,9 +172,9 @@
+         }
+ 
+         // Perform the Baseline Call
+-        (bool _success,) = baselineCall.to.call{ value: baselineCall.value }(baselineCall.data);
++        // (bool _success,) = baselineCall.to.call{ value: baselineCall.value }(baselineCall.data);
+         // dont pass custom errors
+-        if (!_success) revert FLOnlineControl_BaselineSwap_BaselineCallFail();
++        // if (!_success) revert FLOnlineControl_BaselineSwap_BaselineCallFail();
+ 
+         // Track the balance delta
+         uint256 _endingBalance = swapIntent.tokenUserBuys == _NATIVE_TOKEN
+diff -ruN ../src/contracts/solver/SolverBase.sol contracts/solver/SolverBase.sol
+--- ../src/contracts/solver/SolverBase.sol	2025-05-14 15:00:56
++++ contracts/solver/SolverBase.sol	2025-05-15 18:09:02
+@@ -50,8 +50,8 @@
+         safetyFirst(executionEnvironment, solverOpFrom)
+         payBids(executionEnvironment, bidToken, bidAmount)
+     {
+-        (bool success,) = address(this).call{ value: msg.value }(solverOpData);
+-        if (!success) revert SolverCallUnsuccessful();
++        // (bool success,) = address(this).call{ value: msg.value }(solverOpData);
++        // if (!success) revert SolverCallUnsuccessful();
+     }
+ 
+     modifier safetyFirst(address executionEnvironment, address solverOpFrom) {
