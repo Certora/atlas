@@ -69,4 +69,8 @@ contract AtlasHarness is Atlas {
     //     borrow(amount);
     //     reconcile(maxApprovedGasSpend);
     // }
+
+    function havocAll() external {
+        this.havocAll();
+    }
 }
