@@ -1,4 +1,4 @@
-import "./ERC20/erc20cvl.spec";
+//import "./ERC20/erc20cvl.spec";
 // import "./MathSummaries.spec";
 //using AtlasVerification as AtlasVerification;
 using FastLaneOnlineControl as FastLaneOnlineControl;
@@ -125,6 +125,9 @@ methods{
     //function FastLaneOnlineControl.preOpsCall(Atlas.UserOperation) external returns (bytes) => HAVOC_ALL;
     //function FastLaneOnlineControl.allocateValueCall(bool, address, uint256, bytes) external => HAVOC_ALL;
 
+    function _.transfer(address a, uint256 x)                   external with (env e) => havocAllPreserveLockEnvBool(e) expect bool;
+    function _.transferFrom(address a, address b, uint256 x)    external with (env e) => havocAllPreserveLockEnvBool(e) expect bool;
+
 }
 
 function getMimicCodeSummary() returns bytes {
@@ -220,6 +223,12 @@ function havocAllPreserveLockEnv(env e) returns Atlas.Context {
     Atlas.Context ctx;
     genericSummary(e, 0);
     return ctx;
+}
+
+function havocAllPreserveLockEnvBool(env e) returns bool {
+    bool result;
+    genericSummary(e, 0);
+    return result;
 }
 
 /* summary function for solverCall; this adds the value to the solverCallValue temporary funds */
