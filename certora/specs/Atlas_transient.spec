@@ -26,7 +26,8 @@ methods{
         uint256 metacallGasLeft,
         uint256 msgValue,
         address msgSender,
-        bool isSimulation) external with (env e) => havocAllPreserveLockEnv(e) expect (Atlas.Context);
+        bool isSimulation) external with (env e) => validateCallsSummary(msgValue, e)
+            expect (uint256, uint256, uint256, Atlas.ValidCallsResult);
     function _.preOpsWrapper(Atlas.UserOperation) external with (env e) => havocAllPreserveLockEnv(e) expect (Atlas.Context);
     function _.userWrapper(Atlas.UserOperation) external with (env e) => havocAllPreserveLockEnv(e) expect (Atlas.Context);
     function _.getDAppSignatory() external with (env e) => havocAllPreserveLockEnv(e) expect (Atlas.Context);
@@ -260,6 +261,19 @@ function atlasSolverCallSummary(env e) {
 }
 
 
+function validateCallsSummary(uint256 msgValue, env e) returns (uint256, uint256, uint256, Atlas.ValidCallsResult) {
+    uint256 allSolversGasLimit;
+    uint256 allSolversCalldataGas;
+    uint256 bidFindOverhead;
+    Atlas.ValidCallsResult verifyCallsResult;
+
+    solverCallValue = solverCallValue + msgValue;
+    genericSummary(e, 0);
+    solverCallValue = solverCallValue - msgValue;    
+
+    return (allSolversGasLimit, allSolversCalldataGas, bidFindOverhead, verifyCallsResult);
+}
+
 /*----------------------------------------------------------------------------------------------------------------
                                                  RULE & INVARIANTS 
 ----------------------------------------------------------------------------------------------------------------*/
@@ -290,6 +304,13 @@ strong invariant atlasEthBalance()
         }
 
         preserved with (env e){
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved metacall(Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, Atlas.DAppOperation dAppOp, address gasRefundBeneficiary) with (env e) {
+            require(e.msg.sender != currentContract, "metacall cannot be self-called");
             require(e.msg.sender != 0, "zero address cannot call");
             requireInvariant atlasLockEnvNotSelf();
             requireInvariant atlasUnlockInPhase0();
