@@ -1,7 +1,7 @@
-import {Atlas} from "../munged/contracts/atlas/Atlas.sol";
-import "../munged/contracts/types/UserOperation.sol";
-import { IExecutionEnvironment } from "../munged/contracts/interfaces/IExecutionEnvironment.sol";
-import { GasAccLib } from "../munged/contracts/libraries/GasAccLib.sol";
+import {Atlas} from "../../src/contracts/atlas/Atlas.sol";
+import "../../src/contracts/types/UserOperation.sol";
+import { IExecutionEnvironment } from "../../src/contracts/interfaces/IExecutionEnvironment.sol";
+import { GasAccLib } from "../../src/contracts/libraries/GasAccLib.sol";
 
 contract AtlasHarness is Atlas {
     using GasAccLib for uint256;

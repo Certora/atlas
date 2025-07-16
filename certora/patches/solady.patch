@@ -1,0 +1,166 @@
+diff --git a/lib/solady/src/utils/LibSort.sol b/lib/solady/src/utils/LibSort.sol
+index dabafe4..f1ba973 100644
+--- a/lib/solady/src/utils/LibSort.sol
++++ b/lib/solady/src/utils/LibSort.sol
+@@ -14,29 +14,41 @@ library LibSort {
+     // - May be suitable for view functions intended for off-chain querying.
+ 
+     /// @dev Sorts the array in-place with insertion sort.
++    // function insertionSort(uint256[] memory a) internal pure {
++    //     /// @solidity memory-safe-assembly
++    //     assembly {
++    //         let n := mload(a) // Length of `a`.
++    //         mstore(a, 0) // For insertion sort's inner loop to terminate.
++    //         let h := add(a, shl(5, n)) // High slot.
++    //         let w := not(0x1f)
++    //         for { let i := add(a, 0x20) } 1 {} {
++    //             i := add(i, 0x20)
++    //             if gt(i, h) { break }
++    //             let k := mload(i) // Key.
++    //             let j := add(i, w) // The slot before the current slot.
++    //             let v := mload(j) // The value of `j`.
++    //             if iszero(gt(v, k)) { continue }
++    //             for {} 1 {} {
++    //                 mstore(add(j, 0x20), v)
++    //                 j := add(j, w) // `sub(j, 0x20)`.
++    //                 v := mload(j)
++    //                 if iszero(gt(v, k)) { break }
++    //             }
++    //             mstore(add(j, 0x20), k)
++    //         }
++    //         mstore(a, n) // Restore the length of `a`.
++    //     }
++    // }
++
+     function insertionSort(uint256[] memory a) internal pure {
+-        /// @solidity memory-safe-assembly
+-        assembly {
+-            let n := mload(a) // Length of `a`.
+-            mstore(a, 0) // For insertion sort's inner loop to terminate.
+-            let h := add(a, shl(5, n)) // High slot.
+-            let w := not(0x1f)
+-            for { let i := add(a, 0x20) } 1 {} {
+-                i := add(i, 0x20)
+-                if gt(i, h) { break }
+-                let k := mload(i) // Key.
+-                let j := add(i, w) // The slot before the current slot.
+-                let v := mload(j) // The value of `j`.
+-                if iszero(gt(v, k)) { continue }
+-                for {} 1 {} {
+-                    mstore(add(j, 0x20), v)
+-                    j := add(j, w) // `sub(j, 0x20)`.
+-                    v := mload(j)
+-                    if iszero(gt(v, k)) { break }
+-                }
+-                mstore(add(j, 0x20), k)
++        for(uint i = 1; i < a.length; i++) {
++            uint v = a[i];
++            uint j = i - 1;
++            // loop invariant: forall k.k > j && k <= i => a[k] >= v
++            for(; j >= 0 && a[j] > v; j--) {
++                a[j + 1] = a[j];
+             }
+-            mstore(a, n) // Restore the length of `a`.
++            a[j + 1] = v;
+         }
+     }
+ 
+diff --git a/lib/solady/src/utils/SafeTransferLib.sol b/lib/solady/src/utils/SafeTransferLib.sol
+index 6eaa0b0..22de702 100644
+--- a/lib/solady/src/utils/SafeTransferLib.sol
++++ b/lib/solady/src/utils/SafeTransferLib.sol
+@@ -198,22 +198,33 @@ library SafeTransferLib {
+         /// @solidity memory-safe-assembly
+         assembly {
+             let m := mload(0x40) // Cache the free memory pointer.
+-            mstore(0x60, amount) // Store the `amount` argument.
+-            mstore(0x40, to) // Store the `to` argument.
+-            mstore(0x2c, shl(96, from)) // Store the `from` argument.
+-            mstore(0x0c, 0x23b872dd000000000000000000000000) // `transferFrom(address,address,uint256)`.
+-            // Perform the transfer, reverting upon failure.
+-            if iszero(
+-                and( // The arguments of `and` are evaluated from right to left.
+-                    or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.
+-                    call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
+-                )
+-            ) {
+-                mstore(0x00, 0x7939f424) // `TransferFromFailed()`.
+-                revert(0x1c, 0x04)
+-            }
+-            mstore(0x60, 0) // Restore the zero slot to zero.
+-            mstore(0x40, m) // Restore the free memory pointer.
++            // mstore(0x60, amount) // Store the `amount` argument.
++            // mstore(0x40, to) // Store the `to` argument.
++            // mstore(0x2c, shl(96, from)) // Store the `from` argument.
++            // mstore(0x0c, 0x23b872dd000000000000000000000000) // `transferFrom(address,address,uint256)`.
++            mstore(add(m, 0x60), amount) // Store the `amount` argument.
++			mstore(add(m, 0x40), to) // Store the `to` argument.
++			mstore(add(m, 0x2c), shl(96, from)) // Store the `from` argument.
++			mstore(add(m, 0x0c), 0x23b872dd000000000000000000000000) // `transferFrom(address,address,uint256)`.
++			let success := call(gas(), token, 0, add(m, 0x1c), 0x64, 0x00, 0x20)
++             if iszero(and(eq(mload(0x00), 1), success)) {
++                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
++                     mstore(0x00, 0x7939f424) // `TransferFromFailed()`.
++                     revert(0x1c, 0x04)
++                 }
++             }
++            // // Perform the transfer, reverting upon failure.
++            // if iszero(
++            //     and( // The arguments of `and` are evaluated from right to left.
++            //         or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.
++            //         call(gas(), token, 0, 0x1c, 0x64, 0x00, 0x20)
++            //     )
++            // ) {
++            //     mstore(0x00, 0x7939f424) // `TransferFromFailed()`.
++            //     revert(0x1c, 0x04)
++            // }
++            // mstore(0x60, 0) // Restore the zero slot to zero.
++            // mstore(0x40, m) // Restore the free memory pointer.
+         }
+     }
+ 
+@@ -287,20 +298,31 @@ library SafeTransferLib {
+     function safeTransfer(address token, address to, uint256 amount) internal {
+         /// @solidity memory-safe-assembly
+         assembly {
+-            mstore(0x14, to) // Store the `to` argument.
+-            mstore(0x34, amount) // Store the `amount` argument.
+-            mstore(0x00, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.
++            // mstore(0x14, to) // Store the `to` argument.
++            // mstore(0x34, amount) // Store the `amount` argument.
++            // mstore(0x00, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.
++            let m := mload(0x40)
++			mstore(add(m, 0x14), to) // Store the `to` argument.
++			mstore(add(m, 0x34), amount) // Store the `amount` argument.
++            mstore(m, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.
+             // Perform the transfer, reverting upon failure.
+-            if iszero(
+-                and( // The arguments of `and` are evaluated from right to left.
+-                    or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.
+-                    call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
+-                )
+-            ) {
+-                mstore(0x00, 0x90b8ec18) // `TransferFailed()`.
+-                revert(0x1c, 0x04)
+-            }
+-            mstore(0x34, 0) // Restore the part of the free memory pointer that was overwritten.
++            let success := call(gas(), token, 0, add(0x10, m), 0x44, 0x00, 0x20)
++             if iszero(and(eq(mload(0x00), 1), success)) {
++                 if iszero(lt(or(iszero(extcodesize(token)), returndatasize()), success)) {
++                     mstore(0x00, 0x90b8ec18) // `TransferFailed()`.
++                     revert(0x1c, 0x04)
++                 }
++             }
++            // if iszero(
++            //     and( // The arguments of `and` are evaluated from right to left.
++            //         or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.
++            //         call(gas(), token, 0, 0x10, 0x44, 0x00, 0x20)
++            //     )
++            // ) {
++            //     mstore(0x00, 0x90b8ec18) // `TransferFailed()`.
++            //     revert(0x1c, 0x04)
++            // }
++            // mstore(0x34, 0) // Restore the part of the free memory pointer that was overwritten.
+         }
+     }
+ 
