@@ -18,7 +18,7 @@ methods{
     function Escrow._checkSolverBidToken(address, address, uint256) internal returns uint256 => NONDET;
     function Escrow._validateSolverOpDeadline(Atlas.SolverOperation calldata, Atlas.DAppConfig memory) internal returns uint256 => NONDET;
     function AtlasHarness.solverCall(Atlas.Context ctx, Atlas.SolverOperation solverOp, uint256 bidAmount, bytes returnData) external returns (Atlas.SolverTracker) with (env e) =>
-        solverCallSummary(e);
+        solverCallSummary(solverOp.value, e);
 
     function _.validateCalls(Atlas.DAppConfig, Atlas.UserOperation,
         Atlas.SolverOperation[] solverOps,
@@ -233,12 +233,12 @@ function havocAllPreserveLockEnvBool(env e) returns bool {
 }
 
 /* summary function for solverCall; this adds the value to the solverCallValue temporary funds */
-function solverCallSummary(env e) returns Atlas.SolverTracker {
+function solverCallSummary(uint256 solverOpValue, env e) returns Atlas.SolverTracker {
     Atlas.SolverTracker tracker;
-    solverCallValue = solverCallValue + e.msg.value;
+    solverCallValue = solverCallValue + solverOpValue;
     assert getLockEnv() != 0; // precondition for solverCall
 
-    genericSummary(e, -e.msg.value);
+    genericSummary(e, -solverOpValue);
     return tracker;
 }
 
@@ -360,16 +360,26 @@ rule atlasLockEnvNotChanged(method f, calldataarg args) {
 rule atlasSolverCallValuePreserved(method f, calldataarg args) {
     env e;
     mathint solverCallValueBefore = solverCallValue;
+    mathint expectedChange = 0;
     if (f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector) {
         // execute is only called by Atlas itself in the locked state.
         require e.msg.sender == currentContract => getLockEnv() != 0;
     }
-
-    f(e, args);
-    mathint solverCallValueAfter = solverCallValue;
-    mathint expectedChange = 0;
     if (f.selector == sig:solverCall(Atlas.Context, Atlas.SolverOperation, uint256, bytes).selector) {
-        expectedChange = - e.msg.value;
+        Atlas.Context ctx;
+        Atlas.SolverOperation solverOp;
+        uint256 bidAmount;
+        bytes returnData;
+
+        // solverCall is only called by Atlas itself in the locked state.
+        require e.msg.sender == currentContract => getLockEnv() != 0;
+        expectedChange = - solverOp.value;
+
+        solverCall(e, ctx, solverOp, bidAmount, returnData);
+    } else {
+        f(e,args);
     }
+
+    mathint solverCallValueAfter = solverCallValue;
     assert solverCallValueAfter == solverCallValueBefore + expectedChange;
 }
