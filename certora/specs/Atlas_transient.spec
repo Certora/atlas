@@ -237,10 +237,9 @@ function havocAllPreserveLockEnvBool(env e) returns bool {
 /* summary function for solverCall; this adds the value to the solverCallValue temporary funds */
 function solverCallSummary(uint256 solverOpValue, env e) returns Atlas.SolverTracker {
     Atlas.SolverTracker tracker;
-    solverCallValue = solverCallValue + solverOpValue;
     assert getLockEnv() != 0; // precondition for solverCall
 
-    genericSummary(e, -solverOpValue);
+    genericSummary(e, 0);
     return tracker;
 }
 
@@ -257,8 +256,6 @@ function executeSummary(env e) returns Atlas.Context {
 
 /* summary function for solverCall; this checks the precondition required by its invariant for self-calls */
 function atlasSolverCallSummary(env e) {
-    solverCallValue = solverCallValue - e.msg.value;
-
     genericSummary(e, 0);
 }
 
@@ -281,7 +278,12 @@ function validateCallsSummary(uint256 msgValue, env e) returns (uint256, uint256
 ----------------------------------------------------------------------------------------------------------------*/
 
 weak invariant atlasNormallyUnlocked() 
-    getLockEnv() == 0;
+    getLockEnv() == 0
+    {
+        preserved execute(Atlas.DAppConfig config, Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, bytes32 userOpHash, address executionEnvironment, address bundler, bool isSimulation) with (env e) {
+            require e.msg.sender == currentContract => getLockEnv() != 0;
+        }
+    }
 
 
 strong invariant atlasLockEnvNotSelf() 
@@ -375,7 +377,7 @@ rule atlasSolverCallValuePreserved(method f, calldataarg args) {
 
         // solverCall is only called by Atlas itself in the locked state.
         require e.msg.sender == currentContract => getLockEnv() != 0;
-        expectedChange = - solverOp.value;
+        expectedChange = 0;
 
         solverCall(e, ctx, solverOp, bidAmount, returnData);
     } else {
