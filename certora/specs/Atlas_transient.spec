@@ -129,6 +129,8 @@ methods{
     function _.transfer(address a, uint256 x)                   external with (env e) => havocAllPreserveLockEnvBool(e) expect bool;
     function _.transferFrom(address a, address b, uint256 x)    external with (env e) => havocAllPreserveLockEnvBool(e) expect bool;
 
+    function _.getCalldataGas(uint256) external => NONDET ALL;
+    function _.getCalldataGas(uint256) internal => NONDET ALL;
 }
 
 function getMimicCodeSummary() returns bytes {
