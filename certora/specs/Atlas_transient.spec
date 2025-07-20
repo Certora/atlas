@@ -218,8 +218,8 @@ function genericSummary(env e, mathint expectedChangeSolverCallValue) {
     address lockEnvBefore = getLockEnv();
     mathint oldSolverCallValue = solverCallValue;
     havocAll(e);
-    require lockEnvBefore == getLockEnv();
-    require solverCallValue == oldSolverCallValue + expectedChangeSolverCallValue;
+    require lockEnvBefore == getLockEnv(), "post-havoc assumption on lockEnd";
+    require solverCallValue == oldSolverCallValue + expectedChangeSolverCallValue, "post-havoc assumption on solverCallValue";
 }
 
 function havocAllPreserveLockEnv(env e) returns Atlas.Context {
@@ -279,15 +279,20 @@ function validateCallsSummary(uint256 msgValue, env e) returns (uint256, uint256
 
 weak invariant atlasNormallyUnlocked() 
     getLockEnv() == 0
+    // execute cannot be called in the unlocked state
+    filtered {
+        f -> f.selector != sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector
+            && f.selector != sig:havocAll().selector
+    }
+
+
+strong invariant atlasLockEnvNotSelf() 
+    getLockEnv() != currentContract
     {
         preserved execute(Atlas.DAppConfig config, Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, bytes32 userOpHash, address executionEnvironment, address bundler, bool isSimulation) with (env e) {
             require e.msg.sender == currentContract => getLockEnv() != 0;
         }
     }
-
-
-strong invariant atlasLockEnvNotSelf() 
-    getLockEnv() != currentContract;
 
 strong invariant atlasUnlockInPhase0()
     getLockEnv() == 0 => getLockPhase() == 0
@@ -348,7 +353,9 @@ strong invariant atlasEthBalance()
     }
 
 
-rule atlasLockEnvNotChanged(method f, calldataarg args) {
+rule atlasLockEnvNotChanged(method f, calldataarg args) 
+filtered { f -> f.selector != sig:havocAll().selector }
+{
     env e;
     if (f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector) {
         // execute is only called by Atlas itself in the locked state.
@@ -361,7 +368,9 @@ rule atlasLockEnvNotChanged(method f, calldataarg args) {
     assert lockEnvBefore == lockEnvAfter;
 }
 
-rule atlasSolverCallValuePreserved(method f, calldataarg args) {
+rule atlasSolverCallValuePreserved(method f, calldataarg args) 
+filtered { f -> f.selector != sig:havocAll().selector }
+{
     env e;
     mathint solverCallValueBefore = solverCallValue;
     mathint expectedChange = 0;
