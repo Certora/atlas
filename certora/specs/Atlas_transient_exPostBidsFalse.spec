@@ -9,5 +9,5 @@ use invariant atlasEthBalance;
 use rule atlasLockEnvNotChanged;
 use invariant atlasLockEnvNotSelf;
 use invariant atlasNormallyUnlocked;
-use rule atlasSolverCallValuePreserved;
+use rule atlasTemporaryFundsPreserved;
 use invariant atlasUnlockInPhase0;

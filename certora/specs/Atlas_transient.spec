@@ -203,8 +203,8 @@ hook Sload uint112 value s_balanceOf[KEY address a].unbonding {
 ----------------------------------------------------------------------------------------------------------------*/
 
 /* ghost variable that remembers if we are inside a solverCall and have not forwarded the value yet */
-ghost mathint solverCallValue {
-    init_state axiom solverCallValue == 0;
+ghost mathint temporaryFunds {
+    init_state axiom temporaryFunds == 0;
 }
 
 function dispatchDefault(){
@@ -214,32 +214,32 @@ function dispatchDefault(){
 
 
 /* summary function for execute and other functions, this is proved by the rule atlasExecuteDoesntChangeLockEnv */
-function genericSummary(env e, mathint expectedChangeSolverCallValue) {
+function genericSummary(env e) {
     address lockEnvBefore = getLockEnv();
-    mathint oldSolverCallValue = solverCallValue;
+    mathint oldTemporaryFunds = temporaryFunds;
     havocAll(e);
     require lockEnvBefore == getLockEnv(), "post-havoc assumption on lockEnd";
-    require solverCallValue == oldSolverCallValue + expectedChangeSolverCallValue, "post-havoc assumption on solverCallValue";
+    require temporaryFunds == oldTemporaryFunds, "post-havoc assumption on temporaryFunds";
 }
 
 function havocAllPreserveLockEnv(env e) returns Atlas.Context {
     Atlas.Context ctx;
-    genericSummary(e, 0);
+    genericSummary(e);
     return ctx;
 }
 
 function havocAllPreserveLockEnvBool(env e) returns bool {
     bool result;
-    genericSummary(e, 0);
+    genericSummary(e);
     return result;
 }
 
-/* summary function for solverCall; this adds the value to the solverCallValue temporary funds */
+/* summary function for solverCall; this adds the value to the temporaryFunds temporary funds */
 function solverCallSummary(uint256 solverOpValue, env e) returns Atlas.SolverTracker {
     Atlas.SolverTracker tracker;
     assert getLockEnv() != 0; // precondition for solverCall
 
-    genericSummary(e, 0);
+    genericSummary(e);
     return tracker;
 }
 
@@ -248,7 +248,7 @@ function executeSummary(env e) returns Atlas.Context {
     Atlas.Context ctx;
 
     assert getLockEnv() != 0; // precondition for execute
-    genericSummary(e, 0);
+    genericSummary(e);
 
     return ctx;
 }
@@ -256,7 +256,7 @@ function executeSummary(env e) returns Atlas.Context {
 
 /* summary function for solverCall; this checks the precondition required by its invariant for self-calls */
 function atlasSolverCallSummary(env e) {
-    genericSummary(e, 0);
+    genericSummary(e);
 }
 
 
@@ -266,9 +266,9 @@ function validateCallsSummary(uint256 msgValue, env e) returns (uint256, uint256
     uint256 bidFindOverhead;
     Atlas.ValidCallsResult verifyCallsResult;
 
-    solverCallValue = solverCallValue + msgValue;
-    genericSummary(e, 0);
-    solverCallValue = solverCallValue - msgValue;    
+    temporaryFunds = temporaryFunds + msgValue;
+    genericSummary(e);
+    temporaryFunds = temporaryFunds - msgValue;    
 
     return (allSolversGasLimit, allSolversCalldataGas, bidFindOverhead, verifyCallsResult);
 }
@@ -306,7 +306,7 @@ strong invariant atlasUnlockInPhase0()
     }
 
 strong invariant atlasEthBalance()
-    nativeBalances[currentContract] == sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows()) + solverCallValue
+    nativeBalances[currentContract] == sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows()) + temporaryFunds
     {
         preserved onTransactionBoundary {
             requireInvariant atlasNormallyUnlocked();
@@ -368,12 +368,11 @@ filtered { f -> f.selector != sig:havocAll().selector }
     assert lockEnvBefore == lockEnvAfter;
 }
 
-rule atlasSolverCallValuePreserved(method f, calldataarg args) 
+rule atlasTemporaryFundsPreserved(method f, calldataarg args) 
 filtered { f -> f.selector != sig:havocAll().selector }
 {
     env e;
-    mathint solverCallValueBefore = solverCallValue;
-    mathint expectedChange = 0;
+    mathint temporaryFundsBefore = temporaryFunds;
     if (f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector) {
         // execute is only called by Atlas itself in the locked state.
         require e.msg.sender == currentContract => getLockEnv() != 0;
@@ -386,13 +385,12 @@ filtered { f -> f.selector != sig:havocAll().selector }
 
         // solverCall is only called by Atlas itself in the locked state.
         require e.msg.sender == currentContract => getLockEnv() != 0;
-        expectedChange = 0;
 
         solverCall(e, ctx, solverOp, bidAmount, returnData);
     } else {
         f(e,args);
     }
 
-    mathint solverCallValueAfter = solverCallValue;
-    assert solverCallValueAfter == solverCallValueBefore + expectedChange;
+    mathint temporaryFundsAfter = temporaryFunds;
+    assert temporaryFundsAfter == temporaryFundsBefore;
 }
