@@ -6,6 +6,8 @@ methods {
 }
 
 use invariant atlasEthBalance;
+use invariant atlasEthBalanceEnough;
+use rule atlasEthBalanceAlmostEnough;
 use rule atlasLockEnvNotChanged;
 use invariant atlasLockEnvNotSelf;
 use invariant atlasNormallyUnlocked;

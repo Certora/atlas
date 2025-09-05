@@ -131,6 +131,8 @@ methods{
 
     function _.getCalldataGas(uint256) external => NONDET ALL;
     function _.getCalldataGas(uint256) internal => NONDET ALL;
+
+    function computeGasFees(uint256 gasPrice) external returns uint256 envfree;
 }
 
 function getMimicCodeSummary() returns bytes {
@@ -151,6 +153,8 @@ function getOrCreateExecutionEnvironmentSummary() returns address {
 ghost mapping(uint256 => uint256) calldataCostGhost;
 ghost mapping(uint256 => uint256) initialGasUsed;
 
+ghost uint256 lastGasPrice;
+
 // ghost tracking the bonded, unbonded and unbonding balances
 ghost mapping(address => uint112) bondedBalances {
     init_state axiom (usum address a. bondedBalances[a]) == 0;
@@ -164,13 +168,17 @@ ghost mapping(address => uint112) unbondingBalances {
 
 
 definition sumOfBonded() returns mathint =
-    (usum address a. bondedBalances[a]) - bondedBalances[currentContract];
+    (usum address a. bondedBalances[a]);// - bondedBalances[currentContract];
 definition sumOfUnbonded() returns mathint =
-    (usum address a. unbondedBalances[a]) - unbondedBalances[currentContract];
+    (usum address a. unbondedBalances[a]);// - unbondedBalances[currentContract];
 definition sumOfUnbonding() returns mathint =
-    (usum address a. unbondingBalances[a]) - unbondingBalances[currentContract];
+    (usum address a. unbondingBalances[a]);// - unbondingBalances[currentContract];
 
-
+// Hook to set the gas price of current transaction
+hook GASPRICE uint v {
+    // This is sound because all rules we have check only for one transaction.
+    require(lastGasPrice == v, "gas price must not change within a transaction");
+}
 
 // Hooks for bonded balances
 hook Sstore S_accessData[KEY address a].bonded uint112 new_value (uint112 old_value) {
@@ -211,8 +219,6 @@ function dispatchDefault(){
 
 }
 
-
-
 /* summary function for execute and other functions, this is proved by the rule atlasExecuteDoesntChangeLockEnv */
 function genericSummary(env e) {
     address lockEnvBefore = getLockEnv();
@@ -220,6 +226,7 @@ function genericSummary(env e) {
     havocAll(e);
     require lockEnvBefore == getLockEnv(), "post-havoc assumption on lockEnd";
     require temporaryFunds == oldTemporaryFunds, "post-havoc assumption on temporaryFunds";
+    require nativeBalances[currentContract] >= sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows() + computeGasFees(lastGasPrice)) + temporaryFunds, "atlasEthBalance invariant";
 }
 
 function havocAllPreserveLockEnv(env e) returns Atlas.Context {
@@ -306,7 +313,7 @@ strong invariant atlasUnlockInPhase0()
     }
 
 strong invariant atlasEthBalance()
-    nativeBalances[currentContract] == sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows()) + temporaryFunds
+    nativeBalances[currentContract] == sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows() + computeGasFees(lastGasPrice)) + temporaryFunds
     {
         preserved onTransactionBoundary {
             requireInvariant atlasNormallyUnlocked();
@@ -350,8 +357,125 @@ strong invariant atlasEthBalance()
             requireInvariant atlasLockEnvNotSelf();
             requireInvariant atlasUnlockInPhase0();
         }
+
+        preserved deposit() with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved depositAndBond(uint256 amount) with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved withdraw(uint256 amount) with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved setSurchargeRates(uint256 newAtlasRate, uint256 newBundlerRate) with (env e) {
+            require getLockEnv() == 0;
+        }
     }
 
+strong invariant atlasEthBalanceEnough()
+    nativeBalances[currentContract] >= sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows() + computeGasFees(lastGasPrice)) + temporaryFunds
+    {
+        preserved onTransactionBoundary {
+            requireInvariant atlasNormallyUnlocked();
+        }
+
+        preserved with (env e){
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved metacall(Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, Atlas.DAppOperation dAppOp, address gasRefundBeneficiary) with (env e) {
+            require(e.msg.sender != currentContract, "metacall cannot be self-called");
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved execute(Atlas.DAppConfig config, Atlas.UserOperation userOp, Atlas.SolverOperation[] solverOps, bytes32 userOpHash, address executionEnvironment, address bundler, bool isSimulation) with (env e) {
+            require e.msg.sender == currentContract => getLockEnv() != 0;
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved reconcile(uint256 v) with (env e){
+            // reconcile is never called by Atlas itself
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved withdrawSurcharge() with (env e){
+            // withdrawSurcharge is never called by Atlas itself.
+            // this would violate the invariant as the surcharge is burned.
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+
+        preserved deposit() with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved depositAndBond(uint256 amount) with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved withdraw(uint256 amount) with (env e) {
+            require(e.msg.sender != currentContract, "no self call");
+            // also require the things above.
+            require(e.msg.sender != 0, "zero address cannot call");
+            requireInvariant atlasLockEnvNotSelf();
+            requireInvariant atlasUnlockInPhase0();
+        }
+        preserved setSurchargeRates(uint256 newAtlasRate, uint256 newBundlerRate) with (env e) {
+            require getLockEnv() == 0;
+        }
+    }
+
+rule atlasEthBalanceAlmostEnough(method f, calldataarg args)
+filtered {
+    f -> f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector
+        || f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector
+}
+{
+    env e;
+    requireInvariant atlasEthBalance();
+    if (f.selector == sig:execute(Atlas.DAppConfig, Atlas.UserOperation, Atlas.SolverOperation[], bytes32, address, address, bool).selector) {
+        require e.msg.sender == currentContract => getLockEnv() != 0;
+    } else if (f.selector == sig:metacall(Atlas.UserOperation, Atlas.SolverOperation[], Atlas.DAppOperation, address).selector) {
+        require(e.msg.sender != currentContract, "metacall cannot be self-called");
+    }
+    require(e.msg.sender != 0, "zero address cannot call");
+    requireInvariant atlasLockEnvNotSelf();
+    requireInvariant atlasUnlockInPhase0();
+    f(e, args);
+
+    assert nativeBalances[currentContract] + lastGasPrice >= sumOfBonded() + sumOfUnbonded() + sumOfUnbonding() + currentContract.S_cumulativeSurcharge + (getLockEnv() == 0 ? 0 : getBorrowLedgerRepays() - getBorrowLedgerBorrows() + computeGasFees(lastGasPrice)) + temporaryFunds;
+}
 
 rule atlasLockEnvNotChanged(method f, calldataarg args) 
 filtered { f -> f.selector != sig:havocAll().selector }

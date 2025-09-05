@@ -476,7 +476,12 @@ abstract contract Escrow is AtlETH {
             // Get the uint256 from the memory array
             assembly {
                 let dataLocation := add(_data, 0x20)
-                bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
+                // start of munging
+                // bidAmount := mload(add(dataLocation, sub(mload(_data), 32)))
+                let len := mload(_data)
+                if lt(len, 36) { revert(0, 0) }
+                bidAmount := mload(add(dataLocation, sub(len, 32)))
+                // end of munging
             }
             return bidAmount;
         }
@@ -564,6 +569,11 @@ abstract contract Escrow is AtlETH {
         } else {
             // If solverCall() failed, catch the error and encode the failure case in the result uint accordingly.
             bytes4 _errorSwitch = bytes4(_data);
+            result = errorSwitch(_errorSwitch);
+        }
+    }
+
+    function errorSwitch(bytes4 _errorSwitch) internal returns (uint256 result){
             if (_errorSwitch == AlteredControl.selector) {
                 result = 1 << uint256(SolverOutcome.AlteredControl);
             } else if (_errorSwitch == InsufficientEscrow.selector) {
@@ -588,9 +598,8 @@ abstract contract Escrow is AtlETH {
             } else {
                 result = 1 << uint256(SolverOutcome.EVMError);
             }
-        }
     }
-
+    
     /// @notice Executes the SolverOperation logic, including preSolver and postSolver hooks via the Execution
     /// Environment, as well as the actual solver call directly from Atlas to the solver contract.
     /// @param ctx The Context struct containing lock data and the Execution Environment address.

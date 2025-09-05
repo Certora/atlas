@@ -49,11 +49,13 @@ contract FactoryLib {
                 )
             )
         );
-
+// start of munging; to bypass create2 whcih is causing havocing
+require (executionEnvironment.code.length > 0);
+// end of munging
         if (executionEnvironment.code.length == 0) {
-            assembly {
-                executionEnvironment := create2(0, add(_creationCode, 32), mload(_creationCode), salt)
-            }
+            // assembly {
+                // executionEnvironment := create2(0, add(_creationCode, 32), mload(_creationCode), salt)
+            // }
             emit AtlasEvents.ExecutionEnvironmentCreated(user, executionEnvironment);
         }
     }

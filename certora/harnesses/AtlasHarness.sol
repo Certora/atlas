@@ -2,9 +2,12 @@ import {Atlas} from "../../src/contracts/atlas/Atlas.sol";
 import "../../src/contracts/types/UserOperation.sol";
 import { IExecutionEnvironment } from "../../src/contracts/interfaces/IExecutionEnvironment.sol";
 import { GasAccLib } from "../../src/contracts/libraries/GasAccLib.sol";
+import { AccountingMath } from "../../src/contracts/libraries/AccountingMath.sol";
+
 
 contract AtlasHarness is Atlas {
     using GasAccLib for uint256;
+    using AccountingMath for uint256;
 
     constructor(
         uint256 escrowDuration,
@@ -73,4 +76,10 @@ contract AtlasHarness is Atlas {
     function havocAll() external {
         this.havocAll();
     }
+
+    function computeGasFees(uint256 gasPrice) external view returns (uint256) {
+        (uint256 _atlasSurchargeRate, uint256 _bundlerSurchargeRate) = _surchargeRates();
+        return uint256(t_gasLedger.toGasLedger().solverFaultFailureGas).withSurcharge(_atlasSurchargeRate + _bundlerSurchargeRate) * gasPrice;
+    }
+
 }
